@@ -79,13 +79,17 @@ for FILE; do
 			backup_size="$(stat --printf='%s' "${BACKUP_PREFIX}${LINE}")"
 		fi
 		if ! rtest "${REMOTE_HOST}" -e "\"${REMOTE_PREFIX}${LINE}\""; then
-			! ${VERBOSE} || printf "!:${LINE}\n"
+			remote_size=0
+		else
+			remote_size="$(rstat "${REMOTE_HOST}" --printf='%s' "\"${REMOTE_PREFIX}${LINE}\"")" || :
 		fi
-		remote_size="$(rstat "${REMOTE_HOST}" --printf='%s' "\"${REMOTE_PREFIX}${LINE}\"")" || :
-		if test "${local_size}" -eq "${remote_size}" && test "${local_size}" -gt '0'; then
-			! ${VERBOSE} || echo "OK:${LINE}"
-		elif test "${local_size}" -eq '0'; then
-			! ${VERBOSE} || echo "!:${LINE}"
+		if test "${local_size}" -eq "${remote_size}"; then
+			if test "${local_size}" -gt '0'; then
+				! ${VERBOSE} || echo "OK:${LINE}"
+			else
+				! ${VERBOSE} || echo "!:${LINE}"
+				continue
+			fi
 		elif test "${local_size}" -gt "${remote_size}"; then
 			! ${VERBOSE} || printf '%d>%d:%s\n' "${local_size}" "${remote_size}" "${LINE}"
 		elif test "${backup_size}" -gt "${remote_size}"; then
