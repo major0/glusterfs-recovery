@@ -257,6 +257,9 @@ VOLUME="${1}"
 shift
 
 test "$#" -gt 0 || usage 'no remote node specified'
+if ! ssh -n -T -o PasswordAuthentication=no "${1}" exit 0; then
+	die "localhost not authorized to ssh to '${1}'"
+fi
 REMOTE_HOST="${1}"
 shift
 
