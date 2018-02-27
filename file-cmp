@@ -160,17 +160,15 @@ file_cmp()
 	while read __file_cmp_line; do
 		__file_cmp_backup_size=0
 		__file_cmp_remote_size=0
-		if ! __file_cmp_local_size="$(stat --printf='%s' "${__file_cmp_local_path}${__file_cmp_line}")"; then
-			test -e "${__file_cmp_backup_path}${__file_cmp_line}" || die "invalid file '${__file_cmp_line}'"
-			__file_cmp_local_size=0
+		__file_cmp_local_size=0
+		if test -e "${__file_cmp_local_path}${__file_cmp_line}"; then
+			__file_cmp_local_size="$(stat --printf='%s' "${__file_cmp_local_path}${__file_cmp_line}" 2>/dev/null)"
 		fi
 		if test -e "${__file_cmp_backup_path}${__file_cmp_line}"; then
 			__file_cmp_backup_size="$(stat --printf='%s' "${__file_cmp_backup_path}${__file_cmp_line}")"
 		fi
-		if ! rtest "${__file_cmp_remote_host}" -e "\"${__file_cmp_remote_path}${__file_cmp_line}\""; then
-			__file_cmp_remote_size=0
-		else
-			__file_cmp_remote_size="$(rstat "${__file_cmp_remote_host}" --printf='%s' "\"${__file_cmp_remote_path}${__file_cmp_line}\"")" || :
+		if rtest "${__file_cmp_remote_host}" -e "\"${__file_cmp_remote_path}${__file_cmp_line}\""; then
+			__file_cmp_remote_size="$(rstat "${__file_cmp_remote_host}" --printf='%s' "\"${__file_cmp_remote_path}${__file_cmp_line}\"")"
 		fi
 		if test "${__file_cmp_local_size}" -eq "${__file_cmp_remote_size}"; then
 			if test "${__file_cmp_local_size}" -gt '0'; then
@@ -187,6 +185,9 @@ file_cmp()
 			! ${VERBOSE} || printf '%d<%d:%s\n' "${__file_cmp_local_size}" "${__file_cmp_remote_size}" "${__file_cmp_line}"
 		fi
 	done
+	unset __file_cmp_backup_size
+	unset __file_cmp_remote_size
+	unset __file_cmp_local_size
 	unset __file_cmp_local_path
 	unset __file_cmp_remote_host
 	unset __file_cmp_remote_path
