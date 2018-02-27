@@ -225,7 +225,12 @@ brick_path()
 ## inum2path
 # @1 brick path
 # @2 inum
-inum2path() { find "${1}" -inum "${2}" ! -path '*/.glusterfs/*'; }
+inum2path() {
+	find "${1}" -inum "${2}" ! -path '*/.glusterfs/*'| \
+		while read inum2path_line; do
+			printf '%s\n' "${inum2path_line#${1}}"
+		done
+}
 
 ## gfid2path
 # @1 brick path
