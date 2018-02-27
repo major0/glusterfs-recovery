@@ -88,53 +88,62 @@ file_from_gfid()
 	fi
 }
 
-## vol_heal_list_gfid
-# @1 hostname to use for the local node
-vol_heal_list_gfid()
-{(
-	: "vol_heal_list_gfid($*)"
-	__vol_heal_list_gfid_hostname="${1}"
-	while read __vol_heal_list_gfid_line; do
-		test -n "${__vol_heal_list_gfid_line}" || continue
-		case "${__vol_heal_list_gfid_line}" in
+## heal_list
+# @1 volume to examine
+# @2 hostname to use for the local node
+heal_list()
+{
+	: "heal_list($*)"
+	__heal_list_volume="${1}"
+	__heal_list_hostname="${2}"
+	# pipes spawn a subshell
+	export __heal_list_hostname
+
+	gluster volume heal "${__heal_list_volume}" info | while read __heal_list_line; do
+		test -n "${__heal_list_line}" || continue
+		case "${__heal_list_line}" in
 		(Brick*:*)
-			set -- ${__vol_heal_list_gfid_line}
-			: "__vol_heal_list_gfid_hostname='${__vol_heal_list_gfid_hostname}'"
-			: "$@"
+			: "__heal_list_line='$*'"
+			set -- ${__heal_list_line}
 
 			case "${2}" in
-			(${__vol_heal_list_gfid_hostname}:*)
-				__vol_heal_list_gfid_brick="${2##*:}";;
-			(*)	__vol_heal_list_gfid_brick=
+			(${__heal_list_hostname}:*)
+				__heal_list_brick="${2##*:}";;
+			(*)	__heal_list_brick=
 				continue;;
 			esac
 
-			test -d "${__vol_heal_list_gfid_brick}" || die "local brick not found '${__vol_heal_list_gfid_brick}'"
+			test -d "${__heal_list_brick}" || die "local brick not found '${__heal_list_brick}'"
 			continue
 			;;
 		esac
 
-		test -n "${__vol_heal_list_gfid_brick}" || continue
+		test -n "${__heal_list_brick}" || continue
 
-		case "${__vol_heal_list_gfid_line}" in
+		case "${__heal_list_line}" in
 		(*gfid:*)
-			__vol_heal_list_gfid_head="${__vol_heal_list_gfid_line##*:}"
-			__vol_heal_list_gfid_tail="${__vol_heal_list_gfid_head#*/}"
-			if test "${__vol_heal_list_gfid_head}" != "${__vol_heal_list_gfid_tail}"; then
-				__vol_heal_list_gfid_head="${__vol_heal_list_gfid_head%${__vol_heal_list_gfid_tail}}/${__vol_heal_list_gfid_tail}"
+			__heal_list_head="${__heal_list_line##*:}"
+			__heal_list_tail="${__heal_list_head#*/}"
+			if test "${__heal_list_head}" != "${__heal_list_tail}"; then
+				__heal_list_head="${__heal_list_head%${__heal_list_tail}}/${__heal_list_tail}"
 			else
-				__vol_heal_list_gfid_head="${__vol_heal_list_gfid_head%>}"
+				__heal_list_head="${__heal_list_head%>}"
 			fi
-			file_from_gfid "${__vol_heal_list_gfid_brick}" "${__vol_heal_list_gfid_head}"
+			file_from_gfid "${__heal_list_brick}" "${__heal_list_head}"
 			;;
 
 		(Status:*|Number*of*entries:*)
 			continue;;
 
-		(*)	printf '%s\n' "${__vol_heal_list_gfid_line}";;
+		(*)
+			# note: there appears to be a bug in the gluster tools
+			# which appends whitespace to the file name
+			printf '%s\n' "${__heal_list_line%% }";;
 		esac
 	done
-)}
+	unset __heal_list_volume
+	unset __heal_list_hostname
+}
 
 ## file_cmp
 # @1 /path/to/local/brick
@@ -259,4 +268,4 @@ fi
 LOCAL_PREFIX="$(brick_path "${VOLUME}" "${HOSTNAME}")"
 REMOTE_PREFIX="$(brick_path "${VOLUME}" "${REMOTE_HOST}")"
 
-gluster volume heal "${VOLUME}" info | vol_heal_list_gfid "${HOSTNAME}"| file_cmp "${LOCAL_PREFIX}" "${REMOTE_HOST}:${REMOTE_PREFIX}" ${BACKUP_PREFIX}
+heal_list "${VOLUME}" "${HOSTNAME}" | file_cmp "${LOCAL_PREFIX}" "${REMOTE_HOST}:${REMOTE_PREFIX}" ${BACKUP_PREFIX}
