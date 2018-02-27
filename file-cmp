@@ -81,17 +81,10 @@ file_from_gfid()
 	test -e "${4}" || die "no such file or directory '${4}'"
 
 	if test -h "${4}"; then
-		! "${VERBOSE}" || printf "${2}:dir:"
 		realpath "${3}/$(readlink "${4}")"
 	else
 		set -- "$@" "$(stat --printf='%i' "${4}")"
-		# @5 inum
-		if "${VERBOSE}"; then
-			file_from_inum "${1}"  "${5}" \
-				| while read __file_from_gfid_line; do echo "${2}:file:${__file_from_gfid_line}";done
-		else
-			file_from_inum "${1}"  "${5}"
-		fi
+		file_from_inum "${1}"  "${5}"
 	fi
 }
 
@@ -230,7 +223,7 @@ rstat()
 
 
 # Argument handling
-VERBOSE='false'
+VERBOSE='true'
 for arg; do case "${arg}" in (-h|--help) usage;;esac;done
 while test "$#" -gt "0"; do
 	case "${1}" in
