@@ -1,0 +1,146 @@
+#!/bin/sh
+#
+# List files on nodes which need manual healing
+set -e
+
+##
+# Helper routines
+error() { echo "error: $*" >&2; }
+die() { echo "error: $*" >&2; exit 1; }
+
+## file_from_inum
+# @1 brick path
+# @2 inum
+file_from_inum() { find "${1}" -inum "${2}" ! -path '*/.glusterfs/*'; }
+
+## file_from_gfid
+# @1 brick path
+# @2 gfid
+#
+# The .glusterfs directory in the brick root has files named by GFIDs.
+#   IF: The GFID identifies a directory, then this file is a symlink to the actual
+#       directory.  
+#   IF: The GFID identifies a file, then this file is a hard-link to the actual file.
+file_from_gfid()
+{
+	set -- "${1}" "${2}" "${2%${2##????}}"
+	set -- "${1}" "${2}" "${1}/.glusterfs/${3%??}/${3#??}"
+	set -- "$@" "${3}/${2}"
+	# @1 brick path
+	# @2 gfid
+	# @3 gfid_prefix
+	# @4 gfid_path
+	test -e "${4}" || die "no such file or directory '${4}'"
+
+	if test -h "${4}"; then
+		! "${VERBOSE}" || printf "${2}:dir:"
+		realpath "${3}/$(readlink "${4}")"
+	else
+		set -- "$@" "$(stat --printf='%i' "${4}")"
+		# @5 inum
+		if "${VERBOSE}"; then
+			file_from_inum "${1}"  "${5}" \
+				| while read FILE; do echo "${GFID}:file:${FILE}";done
+		else
+			file_from_inum "${1}"  "${5}"
+		fi
+	fi
+}
+
+##
+# Code to manage the user interface
+usage()
+{
+	if test "$#" -gt '0'; then
+		error "$*"
+		echo "try '${0} --help'" >&2
+		exit 1
+	fi
+cat<<END_OF_USAGE
+usage: $0 [options] <volume>
+
+options:
+  -v, --verbose		Verbose output
+  -h, --help		Display this help
+
+END_OF_USAGE
+exit
+}
+
+## vol_heal_list_gfid
+# @1 hostname to use for the local node
+vol_heal_list_gfid()
+{
+	HOSTNAME="${1}"
+	while read LINE; do
+		test -n "${LINE}" || continue
+		case "${LINE}" in
+		(Brick*:*)
+			set -- ${LINE}
+			: "HOSTNAME='${HOSTNAME}'"
+			: "$@"
+
+			case "${2}" in
+			(${HOSTNAME}:*)
+				BRICK="${2##*:}";;
+			(*)	BRICK=
+				continue;;
+			esac
+
+			test -d "${BRICK}" || die "local brick not found '${BRICK}'"
+			continue
+			;;
+		esac
+
+		test -n "${BRICK}" || continue
+
+		case "${LINE}" in
+		(*gfid:*)
+			GFID="${LINE##*:}"
+			GFID="${GFID%?}"
+			file_from_gfid "${BRICK}" "${GFID}"
+			;;
+
+		(Status:*|Number*of*entries:*)
+			continue;;
+
+		(*)	printf '%s\n' "${LINE}";;
+		esac
+	done
+}
+
+## volume_is_valid
+# @1 volume name
+volume_is_valid()
+{(
+	needle="${1}"
+	set -- $(gluster volume list 2>/dev/null)
+	for haystack; do
+		test "${needle}" != "${haystack}" || exit 0
+	done
+	exit 1
+)}
+
+# Argument handling
+VERBOSE='false'
+for arg; do case "${arg}" in (-h|--help) usage;;esac;done
+while test "$#" -gt "0"; do
+	case "${1}" in
+	(-H|--hostname)	HOSTNAME="${2}";shift 2;;
+	(-v|--verbose)	VERBOSE='true';shift;;
+	# Basic posix conformance
+	(-*)	usage "unknown argument '${1}'";;
+	(--)	shift; break;; # Start parsing on '--'
+	(*)	break;;	# Break on unknown arguments
+	esac
+done
+! test "$#" -gt '1' || usage 'too many arguments'
+! test "$#" -lt '1' || usage 'too few arguments'
+
+volume_is_valid "${1}" || die "invalid volume '${1}'"
+test -n "${HOSTNAME}" || HOSTNAME="$(hostname)"
+export VERBOSE
+
+##
+# Main program execution
+gluster volume heal "${1}" info | vol_heal_list_gfid "${HOSTNAME}"

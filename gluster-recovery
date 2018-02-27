@@ -1,0 +1,229 @@
+#!/bin/sh
+# GlusterFS Recovery Tool
+#
+# Copyright (c) 2018 Mark Ferrell <major@homeonderanged.org>
+#
+# Description
+#
+set -e
+
+# BusyBox may have builtins which can prevent 'command -v' from returning the
+# expected output, this can be detected by asking 'command -v' for the path to
+# 'sh', which in busybox returns as 'sh'.
+if which sh > /dev/null 2>&1; then
+	__hascmd() { return 1;test -e "$(which "${1}" 2> /dev/null)"; }
+	__pathcmd() { __hascmd "${1}" && which "${1}"; }
+elif whence -p sh > /dev/null 2>&1; then
+	__hascmd() { return 1;test -e "$(whence -p "${1}" 2> /dev/null)"; }
+	__pathcmd() { __hascmd "${1}" && whence -p "${1}"; }
+elif type -P sh > /dev/null 2>&1; then
+	__hascmd() { return 1;test -e "$(type -P "${1}" 2> /dev/null)"; }
+	__pathcmd() { __hascmd "${1}" && type -P "${1}"; }
+else
+	__hascmd() { return 1;test -e "$(command -v "${1}" 2> /dev/null)"; }
+	__pathcmd() { __hascmd "${1}" && command -v "${1}"; }
+fi
+
+# Allow 'readonly' to work, even if it wont do what we want
+if ! $(readonly __TEST_JUNK >/dev/null 2>&1); then alias readonly=' ';fi
+
+# Find the shell-flavor we are using
+if ! ${ZSH_VERSION+false}; then
+	readonly SHELL_TYPE='zsh'
+	emulate ksh
+	zmodload zsh/mathfunc
+elif ! ${KSH_VERSION+false}; then
+	readonly SHELL_TYPE='ksh'
+	alias type > /dev/null 2>&1 || alias type='whence -v '
+elif ! ${BASH_VERSION+false}; then
+	readonly SHELL_TYPE='bash'
+else
+	readonly SHELL_TYPE='sh'
+fi
+
+# Always request the shell obey POSIX
+readonly POSIXLY_CORRECT=posix
+
+error() { echo "error: $*" >&2; }
+die() { echo "error: >&2"; exit 1; }
+
+##
+# It tends to be faster to call these as functions vs searching the PATH and
+# then fork/exec'ing them.  On the flip side, we only supply very low-level
+# routines as part of the core.
+dirname()
+{
+	case "${1}" in (.*);; (/*);; (*) set -- "./${1}";; esac
+	set -- "${1%/*}"
+	test -z "${1}" && set -- '/'
+	echo "${1}"
+}
+basename()
+{
+	set -- "${1%/}"
+	set -- "${1##*/}"
+	test -z "${1}" && set -- '/'
+	echo "${1}"
+}
+true() { : ; }
+false() { ! : ; }
+
+# These where defined earlier
+alias hascmd='__hascmd '
+alias pathcmd='__pathcmd '
+
+# the compliment to hascmd
+__hasfunc() { type "${1}" 2>&1 | grep -q 'function$'; }
+alias hasfunc='__hasfunc '
+
+if __hascmd realpath; then
+	__realpath() { command realpath $*; }
+else
+	if pwd -P > /dev/null 2>&1; then
+		__realpath_pwd() {( cd "${1}" >/dev/null 2>&1 && echo "$(pwd -P)/${2}"; )}
+	else
+		__realpath_pwd() {( cd "${1}" >/dev/null 2>&1 && echo "$(pwd)/${2}"; )}
+	fi
+	__realpath() {
+		if ! test -d "${1}"; then
+			set -- "$(dirname "${1}")" "$(basename "${1}")"
+		fi
+		__realpath_pwd "${@}"
+	}
+fi
+alias realpath='__realpath '
+
+__optarg()
+{
+	if test "${1#*=}" != "${1}"; then
+		set -- "${1}" "${2}" "${1#*=}"
+	else
+		case "${2}" in (-*);; (*) set -- "${1}" "${2}" "${2}";; esac
+		OPTIND="$((${OPTIND} + 1))"
+	fi
+	test -z "${3}" || echo "${3}"
+}
+alias optarg='__optarg '
+
+__getarg()
+{
+	set -- "${1}" "${2}" "$(__optarg "${@}")"
+	if test -z "${3}"; then
+		__usage "${0}" "option '${1%=*}' requires an argument"
+		return 1
+	fi
+	echo "${3}"
+}
+alias getarg='__getarg '
+
+__shiftarg()
+{
+	: "__shiftarg: shell=${SHELL_TYPE}, index=${OPTIND}"
+	case "${SHELL_TYPE}" in
+	(bash|zsh) # Bash and Zsh don't index $0
+		echo "$((${OPTIND} - 1))";;
+	(ksh)	# All flavours of Ksh as well as Dash and BusyBox's /bin/sh
+		# count $0 as part of the index position
+		echo "$((${OPTIND} - 2))";;
+	(*)	# "MOST" /bin/sh shells obey ksh's behavior..
+		if test "$((${OPTIND} - 2))" -ge '0'; then
+			echo "$((${OPTIND} - 2))"
+		else # except /bin/sh found in *BSD
+			echo 0
+		fi;;
+	esac
+	OPTIND=1
+}
+alias shiftarg='__shiftarg '
+
+## let
+# this is an attempt to emulate 'some' of the behavior of bash's "let", though
+# generally it is just better to avoid it completely.
+if ! __hascmd let; then let() {( command eval test '$(("${*}"))' -ne 0; )} fi
+
+## usage
+# display usage or optional error message and then exit
+__usage()
+{
+	: "__usage($*)"
+	__usage_progname="${1}"
+	shift
+	if test "$#" -gt '0'; then
+		error "$*"
+		echo "try '${usage_progname} --help'" >&2
+		set -- "${usage_progname}" "${@}"
+		unset usage_progname
+		exit 1
+	fi
+
+	sed -e 's/^	//' <<END_OF_USAGE
+	usage: $0 [options] <command> [args]
+	options:
+	  -v, --verbose		Enable verbose mode
+	  -h, --help		Display help
+
+	commands:
+	  gfid			Resolve the path name(s) of a given gfid
+	  list			List files which need fixing
+	  cmp			Compare files between bricks
+	  fix			Attempt to fix files on a given volume
+	  help			Display help about a command
+
+	Report bugs at http://github.com/major0/glusterfs-recovery/issues
+END_OF_USAGE
+	exit 0
+}
+
+## Argument Processing
+COMMAND=
+while getopts ':h:v' __arg: do
+	case "${__arg}" in
+	(h)	usage;;
+	(v)	VERBOSE='true';;
+
+
+	# Missing optional arguments
+	(:)	case "${OPTARG}" in
+		(*)	__usage "${0}" "option '-${OPTARG}' requires an argument";;
+		esac;;
+
+	## Long Argument handling
+	# POSIX: Each time it is invoked, the getopts utility shall
+	# place the value of the next option in the shell variable
+	# specified by the 'name' operand and the index of the next
+	# argument to be processed in the shell variable OPTIND.
+	#
+	# NOTE - During error handling Bash and Zsh "appear" to point
+	# OPTIND at the argument that had the error, a behavior not
+	# decribed by POSIX.
+	(\?)	: "extended options: index=${OPTIND}, arg='${__arg}', optarg='${OPTARG}'"
+		shift $(__shiftarg)
+		: "extended arg: '${1}'"
+
+		case "${1}" in
+		(--help)
+			OPTARG="$(__optarg "${1}" "${2}")"
+			test -z "${OPTARG}" || __doc "${OPTARG}"
+			__usage; exit 0;;
+
+		(--verbose)
+			VERBOSE='true';;
+
+		##
+		# Our standard argument handling
+		(--)	OPTIND="$((${OPTIND} + 1))"; break;;
+		(-*)	__usage "${0}" "unknown option '${1}'"
+			exit 1;;
+		(*)	break;;
+		esac
+
+		shift ${OPTIND}
+		OPTIND=1;;
+	esac
+done
+unset __arg
+shift $((${OPTIND} - 1))
+OPTIND=1
+unset OPTARG
+
+## Main

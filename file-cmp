@@ -1,0 +1,97 @@
+#!/bin/sh
+#set -e
+
+## error
+# Display an error message on stderr
+error() { echo "error: $*" >&2; }
+
+## die
+# Display an error message on stderr and terminate execution
+die() { echo "error: $*" >&2; exit 1; }
+
+## usage
+usage()
+{
+	: usage: "$@"
+	if test "$#" -gt '0'; then
+		error "$*"
+		echo "try '$0 --help'" >&2
+		exit 1
+	fi
+	echo "usage: $0 <file>" >&2
+	exit 0
+}
+
+## rtest
+# @1 host
+# ... args to remote test
+rtest()
+{
+	: rtest: "$@"
+	shift
+	set -- $(ssh -n "${REMOTE_HOST}" "STRING_ERR=\"\$(test "$@" 2>&1 1>/dev/null)\";echo \"\$? \${STRING_ERR}\"")
+	rtest_return="${1}"
+	shift 1
+	test "$#" -eq 0 || echo "$*" >&2
+	set -- ${rtest_return}
+	unset rtest_return
+	return $1
+}
+
+## rstat
+# @1 host
+# ... args to remote stat
+rstat()
+{
+	: rstat: "$@"
+	shift
+	set -- $(ssh -n "${REMOTE_HOST}" "STRING_OUT=\"\$(stat "$@" 2>/dev/null)\";printf \"\$? \${STRING_OUT}\"")
+	rstat_return="${1}"
+	shift 1
+	echo "$*"
+	set -- ${rstat_return}
+	unset rstat_return
+	return $1
+}
+
+LOCAL_PREFIX='/srv/gluster/brick1-3/volume'
+REMOTE_PREFIX='/srv/gluster/brick1-3/volume'
+BACKUP_PREFIX='/srv/backup/brick1-3/volume'
+REMOTE_HOST='node1'
+VERBOSE=true
+export VERBOSE
+
+test "$#" -gt 0 || usage 'no file specified'
+
+for FILE; do test -f "${FILE}" || usage "no such file '${FILE}'"; done
+for FILE; do
+	LINENO=0
+	while read LINE; do
+		LINENO="$((${LINENO}+1))"
+		: "${LINE}:${LINENO}"
+		backup_size=0
+		remote_size=0
+		if ! local_size="$(stat --printf='%s' "${LOCAL_PREFIX}${LINE}")"; then
+			test -e "${BACKUP_PREFIX}${LINE}" || die "invalid file '${LINE}'"
+			local_size=0
+		fi
+		if test -e "${BACKUP_PREFIX}${LINE}"; then
+			backup_size="$(stat --printf='%s' "${BACKUP_PREFIX}${LINE}")"
+		fi
+		if ! rtest "${REMOTE_HOST}" -e "\"${REMOTE_PREFIX}${LINE}\""; then
+			! ${VERBOSE} || printf "!:${LINE}\n"
+		fi
+		remote_size="$(rstat "${REMOTE_HOST}" --printf='%s' "\"${REMOTE_PREFIX}${LINE}\"")" || :
+		if test "${local_size}" -eq "${remote_size}" && test "${local_size}" -gt '0'; then
+			! ${VERBOSE} || echo "OK:${LINE}"
+		elif test "${local_size}" -eq '0'; then
+			! ${VERBOSE} || echo "!:${LINE}"
+		elif test "${local_size}" -gt "${remote_size}"; then
+			! ${VERBOSE} || printf '%d>%d:%s\n' "${local_size}" "${remote_size}" "${LINE}"
+		elif test "${backup_size}" -gt "${remote_size}"; then
+			! ${VERBOSE} || printf '%d>%d:%s\n' "${local_size}" "${remote_size}" "${LINE}"
+		else
+			! ${VERBOSE} || printf '%d<%d:%s\n' "${local_size}" "${remote_size}" "${LINE}"
+		fi
+	done < "${FILE}"
+done
