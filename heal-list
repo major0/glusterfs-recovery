@@ -19,7 +19,7 @@ file_from_inum() { find "${1}" -inum "${2}" ! -path '*/.glusterfs/*'|sed -e "s,^
 #
 # The .glusterfs directory in the brick root has files named by GFIDs.
 #   IF: The GFID identifies a directory, then this file is a symlink to the actual
-#       directory.  
+#       directory.
 #   IF: The GFID identifies a file, then this file is a hard-link to the actual file.
 file_from_gfid()
 {
