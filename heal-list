@@ -11,7 +11,7 @@ die() { echo "error: $*" >&2; exit 1; }
 ## file_from_inum
 # @1 brick path
 # @2 inum
-file_from_inum() { find "${1}" -inum "${2}" ! -path '*/.glusterfs/*'; }
+file_from_inum() { find "${1}" -inum "${2}" ! -path '*/.glusterfs/*'|sed -e "s,^${1},,"; }
 
 ## file_from_gfid
 # @1 brick path
@@ -97,7 +97,12 @@ vol_heal_list_gfid()
 		case "${LINE}" in
 		(*gfid:*)
 			GFID="${LINE##*:}"
-			GFID="${GFID%?}"
+			GFID_TAIL="${GFID#*/}"
+			if test "${GFID}" != "${GFID_TAIL}"; then
+				GFID="${GFID%${GFID_TAIL}}/${GFID_TAIL}"
+			else
+				GFID="${GFID%>}"
+			fi
 			file_from_gfid "${BRICK}" "${GFID}"
 			;;
 
