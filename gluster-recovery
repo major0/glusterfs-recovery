@@ -3,8 +3,11 @@
 #
 # Copyright (c) 2018 Mark Ferrell <major@homeonderanged.org>
 #
-# Description
+# Credit
+#	gfid2path is a rewrite of the gfid-parser available from:
+#		https://gist.githubusercontent.com/semiosis/4392640
 #
+# This file is licensed under the GPL v2
 set -e
 
 # BusyBox may have builtins which can prevent 'command -v' from returning the
@@ -41,11 +44,16 @@ else
 	readonly SHELL_TYPE='sh'
 fi
 
-# Always request the shell obey POSIX
+# Always request the shell obey POSIX (because BASH rarely does)
 readonly POSIXLY_CORRECT=posix
 
-error() { echo "error: $*" >&2; }
-die() { echo "error: >&2"; exit 1; }
+# These where defined earlier but can't be set as an alias until after
+# POSIXLY_CORRECT has been set (thanks to BASH).
+alias hascmd='__hascmd '
+alias pathcmd='__pathcmd '
+# the compliment to hascmd
+__hasfunc() { type "${1}" 2>&1 | grep -q 'function$'; }
+alias hasfunc='__hasfunc '
 
 ##
 # It tends to be faster to call these as functions vs searching the PATH and
@@ -67,14 +75,8 @@ basename()
 }
 true() { : ; }
 false() { ! : ; }
-
-# These where defined earlier
-alias hascmd='__hascmd '
-alias pathcmd='__pathcmd '
-
-# the compliment to hascmd
-__hasfunc() { type "${1}" 2>&1 | grep -q 'function$'; }
-alias hasfunc='__hasfunc '
+error() { echo "error: $*" >&2; }
+die() { echo "error: $*" >&2; exit 1; }
 
 if __hascmd realpath; then
 	__realpath() { command realpath $*; }
@@ -92,6 +94,15 @@ else
 	}
 fi
 alias realpath='__realpath '
+
+if __hascmd readlink; then
+	__readlink() { command readlink $*; }
+elif __hascmd stat; then
+	__readlink() { command stat --printf '%N\n' "$1"; }
+else
+	__readlink() { command ls -l "${1}"|sed -e 's/.*->[[:space:]]\+//'; }
+fi
+alias readlink='__readlink '
 
 __optarg()
 {
@@ -141,7 +152,7 @@ alias shiftarg='__shiftarg '
 # generally it is just better to avoid it completely.
 if ! __hascmd let; then let() {( command eval test '$(("${*}"))' -ne 0; )} fi
 
-## usage
+## __usage
 # display usage or optional error message and then exit
 __usage()
 {
@@ -150,37 +161,246 @@ __usage()
 	shift
 	if test "$#" -gt '0'; then
 		error "$*"
-		echo "try '${usage_progname} --help'" >&2
-		set -- "${usage_progname}" "${@}"
-		unset usage_progname
+		echo "try '${__usage_progname} --help'" >&2
+		unset __usage_progname
 		exit 1
 	fi
 
-	sed -e 's/^	//' <<END_OF_USAGE
-	usage: $0 [options] <command> [args]
-	options:
-	  -v, --verbose		Enable verbose mode
-	  -h, --help		Display help
-
+	case "${__usage_progname}" in
+	(gfid)
+		echo "usage: $0 ${__usage_progname} </path/to/brick> <gfid> [<gfid> ...]";;
+	(ls|list)
+		echo "usage: $0 ${__usage_progname} <volume>";;
+	(cmp|compare)
+		echo "usage: $0 ${__usage_progname} <volume> <remote node>";;
+	(resolv|resolve)
+		echo "usage: $0 ${__usage_progname} <path>";;
+	(*) sed -e 's/^	//' <<END_OF_USAGE
+	usage: $0 <command> [args]
 	commands:
-	  gfid			Resolve the path name(s) of a given gfid
-	  list			List files which need fixing
-	  cmp			Compare files between bricks
-	  fix			Attempt to fix files on a given volume
-	  help			Display help about a command
+	  gfid			Resolve the gfid of a given file name.
+	  list			List files which need fixing.
+	  compare		Compare files between bricks.
+	  resolve		Resolve the path name(s) of a given gfid.
+	  help			Display help about a command.
 
 	Report bugs at http://github.com/major0/glusterfs-recovery/issues
 END_OF_USAGE
+	;;
+	esac
+
+	unset __usage_progname
 	exit 0
 }
 
-## Argument Processing
-COMMAND=
-while getopts ':h:v' __arg: do
-	case "${__arg}" in
-	(h)	usage;;
-	(v)	VERBOSE='true';;
+## volume_is_valid
+# @1 volume name
+volume_is_valid() { gluster volume list|grep -q "^${1}$"; }
 
+## brick_path
+# @1 volume name
+# @2 node
+# Find the brick path for a given node
+brick_path()
+{(
+	: "brick_path($*)"
+	__brick_path_volume="${1}"
+	__brick_path_node="${2}"
+	gluster volume status "${__brick_path_volume}"|while read __brick_path_line; do
+		set -- ${__brick_path_line}
+		case "${1}" in
+		(Brick*)
+			set -- "${2%%:*}" "${2#*:}"
+			if test "${1}" = "${__brick_path_node}"; then
+				echo "${2#*:}"
+				exit 0
+			fi
+			continue
+			;;
+		esac
+	done
+	exit 0
+)}
+
+## inum2path
+# @1 brick path
+# @2 inum
+inum2path() { find "${1}" -inum "${2}" ! -path '*/.glusterfs/*'; }
+
+## gfid2path
+# @1 brick path
+# @2 gfid
+#
+# The .glusterfs directory in the brick root has files named by GFIDs.
+#   IF: The GFID identifies a directory, then this file is a symlink to the actual
+#       directory.
+#   IF: The GFID identifies a file, then this file is a hard-link to the actual file.
+gfid2path()
+{
+	set -- "${1}" "${2}" "${2%${2##????}}"
+	set -- "${1}" "${2}" "${1}/.glusterfs/${3%??}/${3#??}"
+	set -- "$@" "${3}/${2}"
+	# @1 brick path
+	# @2 gfid
+	# @3 gfid_prefix
+	# @4 gfid_path
+	test -e "${4}" || die "no such file or directory '${4}'"
+
+	if test -h "${4}"; then
+		realpath "${3}/$(readlink "${4}")"
+	else
+		set -- "$@" "$(stat --printf='%i' "${4}")"
+		# @5 inum
+		inum2path "${1}"  "${5}"
+	fi
+}
+
+## heal_list
+# @1 volume to examine
+# @2 hostname to use for the local node
+heal_list()
+{
+	: "heal_list($*)"
+	__heal_list_volume="${1}"
+	__heal_list_hostname="${2}"
+	# pipes spawn a subshell
+	export __heal_list_hostname
+
+	gluster volume heal "${__heal_list_volume}" info | while read __heal_list_line; do
+		test -n "${__heal_list_line}" || continue
+		case "${__heal_list_line}" in
+		(Brick*:*)
+			: "__heal_list_line='$*'"
+			set -- ${__heal_list_line}
+
+			case "${2}" in
+			(${__heal_list_hostname}:*)
+				__heal_list_brick="${2##*:}";;
+			(*)	__heal_list_brick=
+				continue;;
+			esac
+
+			test -d "${__heal_list_brick}" || die "local brick not found '${__heal_list_brick}'"
+			continue
+			;;
+		esac
+
+		test -n "${__heal_list_brick}" || continue
+
+		case "${__heal_list_line}" in
+		(*gfid:*)
+			__heal_list_head="${__heal_list_line##*:}"
+			__heal_list_tail="${__heal_list_head#*/}"
+			if test "${__heal_list_head}" != "${__heal_list_tail}"; then
+				__heal_list_head="${__heal_list_head%${__heal_list_tail}}/${__heal_list_tail}"
+			else
+				__heal_list_head="${__heal_list_head%>}"
+			fi
+			gfid2path "${__heal_list_brick}" "${__heal_list_head}"
+			;;
+
+		(Status:*|Number*of*entries:*)
+			continue;;
+
+		(*)
+			# note: there appears to be a bug in the gluster tools
+			# which appends whitespace to the file name
+			printf '%s\n' "${__heal_list_line%% }";;
+		esac
+	done
+	unset __heal_list_volume
+	unset __heal_list_hostname
+}
+
+## file_cmp
+# @1 /path/to/local/brick
+# @2 host:/path/to/remote/brick
+# @3 optional /path/to/backup
+file_cmp()
+{
+	: "file_cmp($*)"
+	__file_cmp_local_path="${1}"
+	__file_cmp_remote_host="${2%%:*}"
+	__file_cmp_remote_path="${2#*:}"
+	__file_cmp_backup_path="${3}"
+
+	while read __file_cmp_line; do
+		__file_cmp_backup_size=0
+		__file_cmp_remote_size=0
+		__file_cmp_local_size=0
+		if test -e "${__file_cmp_local_path}${__file_cmp_line}"; then
+			__file_cmp_local_size="$(stat --printf='%s' "${__file_cmp_local_path}${__file_cmp_line}" 2>/dev/null)"
+		fi
+		if test -e "${__file_cmp_backup_path}${__file_cmp_line}"; then
+			__file_cmp_backup_size="$(stat --printf='%s' "${__file_cmp_backup_path}${__file_cmp_line}")"
+		fi
+		if rtest "${__file_cmp_remote_host}" -e "\"${__file_cmp_remote_path}${__file_cmp_line}\""; then
+			__file_cmp_remote_size="$(rstat "${__file_cmp_remote_host}" --printf='%s' "\"${__file_cmp_remote_path}${__file_cmp_line}\"")"
+		fi
+		if test "${__file_cmp_local_size}" -eq "${__file_cmp_remote_size}"; then
+			if test "${__file_cmp_local_size}" -gt '0'; then
+				echo "OK:${__file_cmp_line}"
+			else
+				echo "!:${__file_cmp_line}"
+				continue
+			fi
+		elif test "${__file_cmp_local_size}" -gt "${__file_cmp_remote_size}"; then
+			printf '%d>%d:%s\n' "${__file_cmp_local_size}" "${__file_cmp_remote_size}" "${__file_cmp_line}"
+		elif test "${__file_cmp_backup_size}" -gt "${__file_cmp_remote_size}"; then
+			printf '%d>%d:%s\n' "${__file_cmp_local_size}" "${__file_cmp_remote_size}" "${__file_cmp_line}"
+		else
+			printf '%d<%d:%s\n' "${__file_cmp_local_size}" "${__file_cmp_remote_size}" "${__file_cmp_line}"
+		fi
+	done
+	unset __file_cmp_backup_size
+	unset __file_cmp_remote_size
+	unset __file_cmp_local_size
+	unset __file_cmp_local_path
+	unset __file_cmp_remote_host
+	unset __file_cmp_remote_path
+	unset __file_cmp_backup_path
+}
+
+## rtest
+# @1 host
+# ... args to remote test
+rtest()
+{
+	: "rtest($*)"
+	__rtest_remote_host="${1}"
+	shift
+	set -- $(ssh -n -T -o PasswordAuthentication=no "${__rtest_remote_host}" "STRING_ERR=\"\$(test "$@" 2>&1 1>/dev/null)\";echo \"\$? \${STRING_ERR}\"")
+	__rtest_return="${1}"
+	shift 1
+	test "$#" -eq 0 || echo "$*" >&2
+	set -- ${__rtest_return}
+	unset __rtest_remote_host
+	unset __rtest_return
+	return $1
+}
+
+## rstat
+# @1 host
+# ... args to remote stat
+rstat()
+{
+	: "rstat($*)"
+	__rstat_remote_host="${1}"
+	shift
+	set -- $(ssh -n -T -o PasswordAuthentication=no "${__rstat_remote_host}" "STRING_OUT=\"\$(stat "$@" 2>/dev/null)\";printf \"\$? \${STRING_OUT}\"")
+	__rstat_return="${1}"
+	shift 1
+	echo "$*"
+	set -- ${__rstat_return}
+	unset __rstat_remote_host
+	unset __rstat_return
+	return $1
+}
+
+## Argument Processing
+while getopts ':h' __arg; do
+	case "${__arg}" in
+	(h)	__usage "${0}";;
 
 	# Missing optional arguments
 	(:)	case "${OPTARG}" in
@@ -204,10 +424,7 @@ while getopts ':h:v' __arg: do
 		(--help)
 			OPTARG="$(__optarg "${1}" "${2}")"
 			test -z "${OPTARG}" || __doc "${OPTARG}"
-			__usage; exit 0;;
-
-		(--verbose)
-			VERBOSE='true';;
+			__usage "${0}"; exit 0;;
 
 		##
 		# Our standard argument handling
@@ -226,4 +443,58 @@ shift $((${OPTIND} - 1))
 OPTIND=1
 unset OPTARG
 
+test -n "${HOSTNAME}" || HOSTNAME="$(hostname)"
+export HOSTNAME
+
+test "$#" -gt '0' || __usage "${0}" 'no command specified'
+COMMAND="${1}";shift
+for arg; do case "${arg}" in (-h|--help) __usage "${COMMAND}";; esac; done
+
 ## Main
+case "${COMMAND}" in
+(gfid)
+	test "$#" -gt '0' || __usage "${COMMAND}" 'no brick specified'
+	BRICK="${1}";shift
+	test "$#" -gt '1' || __usage "${COMMAND}" 'no gfid specified'
+	for GFID; do
+		gfid2path "${BRICK}" "${GFID}"
+	done
+	;;
+
+(list|ls)
+	gluster volume list > /dev/null 2>&1 || die "'gluster' command unavailable"
+	test "$#" -gt 0 || usage 'no volume specified'
+	for VOLUME; do volume_is_valid "${VOLUME}" || die "invalid volume '${VOLUME}'";done
+	for VOLUME; do heal_list "${VOLUME}" "${HOSTNAME}"; done
+	;;
+(compare|cmp)
+	gluster volume list > /dev/null 2>&1 || die "'gluster' command unavailable"
+	test "$#" -gt 0 || usage 'no volume specified'
+	volume_is_valid "${1}" || die "invalid volume '${1}'"
+	VOLUME="${1}"
+	shift
+
+	test "$#" -gt 0 || usage 'no remote node specified'
+	if ! ssh -n -T -o PasswordAuthentication=no "${1}" exit 0; then
+		die "localhost not authorized to ssh to '${1}'"
+	fi
+	REMOTE_HOST="${1}"
+	shift
+
+	if test "$#" -gt 0; then
+		test -d "${1}" || die "invalid directory '${1}'"
+		BACKUP_PREFIX="$1";shift
+	fi
+
+	LOCAL_PREFIX="$(brick_path "${VOLUME}" "${HOSTNAME}")"
+	REMOTE_PREFIX="$(brick_path "${VOLUME}" "${REMOTE_HOST}")"
+
+	heal_list "${VOLUME}" "${HOSTNAME}" | file_cmp "${LOCAL_PREFIX}" "${REMOTE_HOST}:${REMOTE_PREFIX}" ${BACKUP_PREFIX}
+	;;
+
+#(resolve|resolv)	path2gfid "${@}" ;;
+
+(help)  test "$#" -eq '0' || __usage "${1}"
+	__usage "${0}" ;;
+(*)	__usage "unknown command '${COMMAND}'";;
+esac
