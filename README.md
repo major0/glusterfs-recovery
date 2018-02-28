@@ -4,21 +4,27 @@ This tool aims to assist administrators in recovering files in a GlusterFS
 filesystem in the event that GlusterFS is not capable of healing the file
 itself.
 
-## Requirements
+### Requirements
 These tools need to be run as root on a node which is part of a gluster volume.
 Further more, many of the commands expect ssh to be usable for contacting other
 nodes w/out a password prompt (ssh `authorized_leys` configured appropriately).
 
-## Usage
-`glusterfs-recovery <command> [args]`
+### Credits
+This tool contains the routine `gfid2path()` which was inspired by
+`gfid-parser` by semiosis. See: https://gist.githubusercontent.com/semiosis/4392640
 
 ## Commands
 
-### list
+## help
+Display help about the specified command, or generic help if no command is specified.
+
+Example: `gluster-recovery help list`
+
+## list
 List which files on the local node are in need of healing.
  - `gluster-recovery list <volume>`
 
-### remove (TODO)
+## remove (TODO)
 - requires ssh
 Remove a file from all bricks in a volume simultaneously.
 
@@ -30,7 +36,7 @@ the brick directly.
 **WARNING** This command will make irrivocable changes to the filesystem, it is
 recommended that a copy of the brick be made before using this command.
 
-### compare
+## compare
 - requires ssh
 Compare files between various peers which are, or were, non-arbiter members of a replicated volume.
 
@@ -45,7 +51,7 @@ have been subsequently replaced.
 
 Example: `gluster-recovery compare <volume> <hostname>:</path/to/brick>`
 
-### gfid2path
+## gfid2path
 Find the path/file of a given gfid.
  - `gluster-recovery gfid2path </path/to/brick> <gfid> [<gfid> ...]`
 
@@ -53,6 +59,3 @@ Find the path/file of a given gfid.
  Find the gfid of a given path.
  - `gluster-recovery path2gfid </path/to/file> [</path/to/file> ...]`
 
-## Credits
-Inspirtation for the `gfid2path()` routine came from gfid-parser. See:
-https://gist.githubusercontent.com/semiosis/4392640
