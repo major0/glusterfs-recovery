@@ -468,18 +468,18 @@ case "${COMMAND}" in
 
 (list|ls)
 	gluster volume list > /dev/null 2>&1 || die "'gluster' command unavailable"
-	test "$#" -gt 0 || usage 'no volume specified'
+	test "$#" -gt 0 || __usage "${COMMAND}" 'no volume specified'
 	for VOLUME; do volume_is_valid "${VOLUME}" || die "invalid volume '${VOLUME}'";done
 	for VOLUME; do heal_list "${VOLUME}" "${HOSTNAME}"; done
 	;;
 (compare|cmp)
 	gluster volume list > /dev/null 2>&1 || die "'gluster' command unavailable"
-	test "$#" -gt 0 || usage 'no volume specified'
+	test "$#" -gt 0 || __usage "${COMMAND}" 'no volume specified'
 	volume_is_valid "${1}" || die "invalid volume '${1}'"
 	VOLUME="${1}"
 	shift
 
-	test "$#" -gt 0 || usage 'no remote node specified'
+	test "$#" -gt 0 || __usage "${COMMAND}" 'no remote node specified'
 	if ! ssh -n -T -o PasswordAuthentication=no "${1}" exit 0; then
 		die "localhost not authorized to ssh to '${1}'"
 	fi
