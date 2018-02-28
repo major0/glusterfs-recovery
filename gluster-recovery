@@ -475,21 +475,13 @@ for arg; do case "${arg}" in (-h|--help) __usage "${COMMAND}";; esac; done
 
 ## Main
 case "${COMMAND}" in
-(gfid2path)
-	test "$#" -gt '0' || __usage "${COMMAND}" 'no brick specified'
-	BRICK="${1}";shift
-	test "$#" -gt '1' || __usage "${COMMAND}" 'no gfid specified'
-	for GFID; do
-		gfid2path "${BRICK}" "${GFID}"
-	done
-	;;
-
 (list|ls)
 	gluster volume list > /dev/null 2>&1 || die "'gluster' command unavailable"
 	test "$#" -gt 0 || __usage "${COMMAND}" 'no volume specified'
 	for VOLUME; do volume_is_valid "${VOLUME}" || die "invalid volume '${VOLUME}'";done
 	for VOLUME; do heal_list "${VOLUME}" "${HOSTNAME}"; done
 	;;
+
 (compare|cmp)
 	gluster volume list > /dev/null 2>&1 || die "'gluster' command unavailable"
 	test "$#" -gt 0 || __usage "${COMMAND}" 'no volume specified'
@@ -513,6 +505,15 @@ case "${COMMAND}" in
 	REMOTE_PREFIX="$(brick_path "${VOLUME}" "${REMOTE_HOST}")"
 
 	heal_list "${VOLUME}" "${HOSTNAME}" | file_cmp "${LOCAL_PREFIX}" "${REMOTE_HOST}:${REMOTE_PREFIX}" ${BACKUP_PREFIX}
+	;;
+
+(gfid2path)
+	test "$#" -gt '0' || __usage "${COMMAND}" 'no brick specified'
+	BRICK="${1}";shift
+	test "$#" -gt '1' || __usage "${COMMAND}" 'no gfid specified'
+	for GFID; do
+		gfid2path "${BRICK}" "${GFID}"
+	done
 	;;
 
 (path2gfid)
