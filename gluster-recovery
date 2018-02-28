@@ -197,6 +197,11 @@ END_OF_USAGE
 # @1 volume name
 volume_is_valid() { gluster volume list|grep -q "^${1}$"; }
 
+## volume_is_arbiter
+# @1 volume name
+# @2 hostname
+volume_is_arbiter() { gluster volume info "${1}" | grep -q "^Brick.*${2}.*(arbiter)"; }
+
 ## getpeer
 # @1 volume name
 # Report the first suitable peer for a given volume
@@ -516,6 +521,10 @@ case "${COMMAND}" in
 	VOLUME="${1}"
 	shift
 
+	if volume_is_arbiter "${VOLUME}" "${HOSTNAME}"; then
+		die 'can not run compare from arbiter'
+	fi
+
 	if ! LOCAL_PREFIX="$(brick_path "${VOLUME}" "${HOSTNAME}")"; then
 		die "local node not a member of volume '${VOLUME}'"
 	fi
@@ -526,15 +535,15 @@ case "${COMMAND}" in
 		fi
 		REMOTE_HOST="${1%%:*}"
 
-		if test "${1}" != "${REMOTE_HOST}"; then
+		if volume_is_arbiter "${VOLUME}" "${REMOTE_HOST}"; then
+			die 'can not compare against an arbiter'
+		elif test "${1}" != "${REMOTE_HOST}"; then
 			if ! rtest "${REMOTE_HOST}" -e "${1#*:}"; then
 				die "invalid remote path '${1#*:}'"
 			fi
 			REMOTE_PREFIX="${1#*:}"
 		elif ! REMOTE_PREFIX="$(brick_path "${VOLUME}" "${REMOTE_HOST}")"; then
 			die "node '${REMOTE_HOST}' not a member of volume '${VOLUME}'"
-		elif gluster volume info "${VOLUME}" | grep -q "^Brick.*${REMOTE_HOST}.*(arbiter)"; then
-			die 'can not compare against an arbiter'
 		fi
 		shift
 	else
