@@ -531,10 +531,10 @@ case "${COMMAND}" in
 				die "invalid remote path '${1#*:}'"
 			fi
 			REMOTE_PREFIX="${1#*:}"
-		else
-			if ! REMOTE_PREFIX="$(brick_path "${VOLUME}" "${REMOTE_HOST}")"; then
-				die "node '${REMOTE_HOST}' not a member of volume '${VOLUME}'"
-			fi
+		elif ! REMOTE_PREFIX="$(brick_path "${VOLUME}" "${REMOTE_HOST}")"; then
+			die "node '${REMOTE_HOST}' not a member of volume '${VOLUME}'"
+		elif gluster volume info "${VOLUME}" | grep -q "^Brick.*${REMOTE_HOST}.*(arbiter)"; then
+			die 'can not compare against an arbiter'
 		fi
 		shift
 	else
