@@ -56,7 +56,7 @@ have been subsequently replaced.
 ## gfid2path
 Find the path/file of a given gfid.
 
-**Example:** `gluster-recovery gfid2path </path/to/brick> <gfid> [<gfid> ...]`
+**Example:** `gluster-recovery gfid2path <volume> <gfid> [<gfid> ...]`
 
 ## path2gfid
 Find the gfid of a given path.
