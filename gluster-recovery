@@ -486,6 +486,9 @@ case "${COMMAND}" in
 	gluster volume list > /dev/null 2>&1 || die "'gluster' command unavailable"
 	test "$#" -gt 0 || __usage "${COMMAND}" 'no volume specified'
 	volume_is_valid "${1}" || die "invalid volume '${1}'"
+	if ! gluster volume info "${1}"|grep -iq '^type:.*replicate'; then
+		die 'compare only valid on replicated volumes'
+	fi
 	VOLUME="${1}"
 	shift
 
