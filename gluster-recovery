@@ -170,7 +170,7 @@ __usage()
 	(ls|list)
 		echo "usage: $0 ${__usage_progname} <volume>";;
 	(cmp|compare)
-		echo "usage: $0 ${__usage_progname} <volume> <remote node>";;
+		echo "usage: $0 ${__usage_progname} <volume> [<node>[:</path/to/brick>]]";;
 	(gfid2path)
 		echo "usage: $0 ${__usage_progname} </path/to/brick> <gfid> [<gfid> ...]";;
 	(path2gfid)
@@ -179,7 +179,7 @@ __usage()
 	usage: $0 <command> [args]
 	commands:
 	  list			List files which need fixing.
-	  compare		Compare files between bricks.
+	  compare		Compare files between nodes.
 	  gfid2path		Find the file(s) for a given gfid.
 	  path2gfid		Find the gfid for listed file(s).
 	  help			Display help about a command.
@@ -196,6 +196,30 @@ END_OF_USAGE
 ## volume_is_valid
 # @1 volume name
 volume_is_valid() { gluster volume list|grep -q "^${1}$"; }
+
+## getpeer
+# @1 volume name
+# Report the first suitable peer for a given volume
+getpeer()
+{(
+	: "getpeer($*)"
+	__getpeer_volume="${1}"
+	gluster volume info "${__getpeer_volume}"|while read __getpeer_line; do
+		set -- ${__getpeer_line}
+		case "${1}" in
+		(Bricks*|Brick*\(arbiter\)*) continue;;
+		(Brick*)
+			set -- "${2%%:*}" "${2#*:}"
+			if test "${1}" != "${HOSTNAME}"; then
+				echo "${1}"
+				exit 0
+			fi
+			continue
+			;;
+		esac
+	done
+	exit 0
+)}
 
 ## brick_path
 # @1 volume name
@@ -217,9 +241,9 @@ brick_path()
 			fi
 			continue
 			;;
+		(Task*)	exit 1;;
 		esac
 	done
-	exit 0
 )}
 
 ## inum2path
@@ -492,20 +516,36 @@ case "${COMMAND}" in
 	VOLUME="${1}"
 	shift
 
-	test "$#" -gt 0 || __usage "${COMMAND}" 'no remote node specified'
-	if ! ssh -n -T -o PasswordAuthentication=no "${1}" exit 0; then
-		die "localhost not authorized to ssh to '${1}'"
-	fi
-	REMOTE_HOST="${1}"
-	shift
-
-	if test "$#" -gt 0; then
-		test -d "${1}" || die "invalid directory '${1}'"
-		BACKUP_PREFIX="$1";shift
+	if ! LOCAL_PREFIX="$(brick_path "${VOLUME}" "${HOSTNAME}")"; then
+		die "local node not a member of volume '${VOLUME}'"
 	fi
 
-	LOCAL_PREFIX="$(brick_path "${VOLUME}" "${HOSTNAME}")"
-	REMOTE_PREFIX="$(brick_path "${VOLUME}" "${REMOTE_HOST}")"
+	if test "$#" -gt '0'; then
+		if ! ssh -n -T -o PasswordAuthentication=no "${1%%:*}" exit 0; then
+			die "localhost not authorized to ssh to '${1%%:*}'"
+		fi
+		REMOTE_HOST="${1%%:*}"
+
+		if test "${1}" != "${REMOTE_HOST}"; then
+			if ! rtest "${REMOTE_HOST}" -e "${1#*:}"; then
+				die "invalid remote path '${1#*:}'"
+			fi
+			REMOTE_PREFIX="${1#*:}"
+		else
+			if ! REMOTE_PREFIX="$(brick_path "${VOLUME}" "${REMOTE_HOST}")"; then
+				die "node '${REMOTE_HOST}' not a member of volume '${VOLUME}'"
+			fi
+		fi
+		shift
+	else
+		if ! REMOTE_HOST="$(getpeer "${VOLUME}")"; then
+			die "no available peers for volume '${VOLUME}'"
+		fi
+
+		if ! ssh -n -T -o PasswordAuthentication=no "${REMOTE_HOST}" exit 0; then
+			die "localhost not authorized to ssh to '${REMOTE_HOST}'"
+		fi
+	fi
 
 	heal_list "${VOLUME}" "${HOSTNAME}" | file_cmp "${LOCAL_PREFIX}" "${REMOTE_HOST}:${REMOTE_PREFIX}" ${BACKUP_PREFIX}
 	;;
