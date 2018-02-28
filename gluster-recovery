@@ -167,21 +167,21 @@ __usage()
 	fi
 
 	case "${__usage_progname}" in
-	(gfid)
-		echo "usage: $0 ${__usage_progname} </path/to/brick> <gfid> [<gfid> ...]";;
 	(ls|list)
 		echo "usage: $0 ${__usage_progname} <volume>";;
 	(cmp|compare)
 		echo "usage: $0 ${__usage_progname} <volume> <remote node>";;
-	(resolv|resolve)
-		echo "usage: $0 ${__usage_progname} <path>";;
+	(gfid2path)
+		echo "usage: $0 ${__usage_progname} </path/to/brick> <gfid> [<gfid> ...]";;
+	(path2gfid)
+		echo "usage: $0 ${__usage_progname} </path/to/file> [...]";;
 	(*) sed -e 's/^	//' <<END_OF_USAGE
 	usage: $0 <command> [args]
 	commands:
-	  gfid			Resolve the gfid of a given file name.
 	  list			List files which need fixing.
 	  compare		Compare files between bricks.
-	  resolve		Resolve the path name(s) of a given gfid.
+	  gfid2path		Find the file(s) for a given gfid.
+	  path2gfid		Find the gfid for listed file(s).
 	  help			Display help about a command.
 
 	Report bugs at http://github.com/major0/glusterfs-recovery/issues
@@ -258,6 +258,24 @@ gfid2path()
 		# @5 inum
 		inum2path "${1}"  "${5}"
 	fi
+}
+
+## path2gfid
+# @1 file path
+#
+# Gluster stores the gfid for every file as an extended attribute named
+# 'trusted.gfid'
+path2gfid()
+{
+	set -- "$(getfattr -e hex -n trusted.gfid "${1}" 2>/dev/null|sed -e '/^#/d')"
+	set -- "${1#trusted.gfid=0x}"
+	set -- "${@}" "$(printf '%.8s' "${1}")"
+	set -- "${@}" "$(printf '%.4s' "${1#${2}}")"
+	set -- "${@}" "$(printf '%.4s' "${1#${2}${3}}")"
+	set -- "${@}" "$(printf '%.4s' "${1#${2}${3}${4}}")"
+	set -- "${@}" "${1#${2}${3}${4}${5}}"
+	shift
+	echo "${1}-${2}-${3}-${4}-${5}"
 }
 
 ## heal_list
@@ -457,7 +475,7 @@ for arg; do case "${arg}" in (-h|--help) __usage "${COMMAND}";; esac; done
 
 ## Main
 case "${COMMAND}" in
-(gfid)
+(gfid2path)
 	test "$#" -gt '0' || __usage "${COMMAND}" 'no brick specified'
 	BRICK="${1}";shift
 	test "$#" -gt '1' || __usage "${COMMAND}" 'no gfid specified'
@@ -497,7 +515,11 @@ case "${COMMAND}" in
 	heal_list "${VOLUME}" "${HOSTNAME}" | file_cmp "${LOCAL_PREFIX}" "${REMOTE_HOST}:${REMOTE_PREFIX}" ${BACKUP_PREFIX}
 	;;
 
-#(resolve|resolv)	path2gfid "${@}" ;;
+(path2gfid)
+	test "$#" -gt 0 || __usage "${COMMAND}" 'no file specified'
+	for file; do test -e "${file}" || __usage "${COMMAND}" "no such file '${file}'"; done
+	for file; do path2gfid "${file}";done
+	;;
 
 (help)  test "$#" -eq '0' || __usage "${1}"
 	__usage "${0}" ;;
