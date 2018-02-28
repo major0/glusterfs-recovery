@@ -56,10 +56,10 @@ have been subsequently replaced.
 ## gfid2path
 Find the path/file of a given gfid.
 
-**Example:** `gluster-recovery gfid2path <volume> <gfid> [<gfid> ...]`
+**Example:** `gluster-recovery gfid2path <volume> <gfid>`
 
 ## path2gfid
 Find the gfid of a given path.
 
-**Example:** `gluster-recovery path2gfid </path/to/file> [</path/to/file> ...]`
+**Example:** `gluster-recovery path2gfid </path/to/file>`
 

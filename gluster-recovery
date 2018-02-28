@@ -172,9 +172,9 @@ __usage()
 	(cmp|compare)
 		echo "usage: $0 ${__usage_progname} <volume> [<node>[:</path/to/brick>]]";;
 	(gfid2path)
-		echo "usage: $0 ${__usage_progname} <volume> <gfid> [<gfid> ...]";;
+		echo "usage: $0 ${__usage_progname} <volume> <gfid>";;
 	(path2gfid)
-		echo "usage: $0 ${__usage_progname} </path/to/file> [...]";;
+		echo "usage: $0 ${__usage_progname} </path/to/file>";;
 	(*) sed -e 's/^	//' <<END_OF_USAGE
 	usage: $0 <command> [args]
 	commands:
@@ -574,15 +574,15 @@ case "${COMMAND}" in
 	fi
 
 	test "$#" -ge '1' || __usage "${COMMAND}" 'no gfid specified'
-	for GFID; do
-		gfid2path "${BRICK}" "${GFID}"
-	done
+	test "$#" -le '1' || __usage "${COMMAND}" 'too many arguments'
+	gfid2path "${BRICK}" "${1}"
 	;;
 
 (path2gfid)
-	test "$#" -gt 0 || __usage "${COMMAND}" 'no file specified'
-	for file; do test -e "${file}" || __usage "${COMMAND}" "no such file '${file}'"; done
-	for file; do path2gfid "${file}";done
+	test "$#" -ge '1' || __usage "${COMMAND}" 'no file specified'
+	test "$#" -le '1' || __usage "${COMMAND}" 'too many arguments'
+	test -e "${1}" || __usage "${COMMAND}" "no such file '${1}'"
+	path2gfid "${1}"
 	;;
 
 (help)  test "$#" -eq '0' || __usage "${1}"
