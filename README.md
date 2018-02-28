@@ -2,7 +2,10 @@
 
 This tool aims to assist administrators in recovering files in a GlusterFS
 filesystem in the event that GlusterFS is not capable of healing the file
-itself.
+itself and once other options such as splitmount have failed or are not
+applicable to the given failure scenario.
+
+See: https://joejulian.name/post/glusterfs-split-brain-recovery-made-easy/
 
 ### Requirements
 These tools need to be run as root on a node which is part of a gluster volume.
