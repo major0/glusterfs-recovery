@@ -61,7 +61,7 @@ alias hasfunc='__hasfunc '
 # routines as part of the core.
 dirname()
 {
-	case "${1}" in (.*);; (/*);; (*) set -- "./${1}";; esac
+	case "${1}" in (*/*|/*);; (*) set -- "./${1}";; esac
 	set -- "${1%/*}"
 	test -z "${1}" && set -- '/'
 	echo "${1}"
@@ -79,7 +79,7 @@ error() { echo "error: $*" >&2; }
 die() { echo "error: $*" >&2; exit 1; }
 
 if __hascmd realpath; then
-	__realpath() { command realpath $*; }
+	__realpath() { command realpath "$@"; }
 else
 	if pwd -P > /dev/null 2>&1; then
 		__realpath_pwd() {( cd "${1}" >/dev/null 2>&1 && echo "$(pwd -P)/${2}"; )}
