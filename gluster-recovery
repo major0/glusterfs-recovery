@@ -75,6 +75,7 @@ basename()
 }
 true() { : ; }
 false() { ! : ; }
+warn() { echo "WARNING! $*"; }
 error() { echo "error: $*" >&2; }
 die() { echo "error: $*" >&2; exit 1; }
 
@@ -169,6 +170,8 @@ __usage()
 	case "${__usage_progname}" in
 	(ls|list)
 		echo "usage: $0 ${__usage_progname} <volume>";;
+	(rm|remove)
+		echo "usage: $0 ${__usage_progname} <volume> [-r] [--dry-run] </path/to/file>";;
 	(cmp|compare)
 		echo "usage: $0 ${__usage_progname} <volume> [<node>[:</path/to/brick>]]";;
 	(gfid2path)
@@ -179,6 +182,7 @@ __usage()
 	usage: $0 <command> [args]
 	commands:
 	  list			List files which need fixing.
+	  remove		Remove a file from all bricks in a volume.
 	  compare		Compare files between nodes.
 	  gfid2path		Find the file(s) for a given gfid.
 	  path2gfid		Find the gfid for the given file(s).
@@ -224,6 +228,21 @@ getpeer()
 		esac
 	done
 	exit 0
+)}
+
+## list_peers
+# @1 volume name
+# Report all peers of a given volume
+list_peers()
+{(
+	: "list_peers($*)"
+	__list_peers_volume="${1}"
+	gluster volume info "${__list_peers_volume}"|while read __list_peers_line; do
+		set -- ${__list_peers_line}
+		case "${1}" in
+		(Brick*) echo "${2%%:*}"; continue ;;
+		esac
+	done
 )}
 
 ## brick_path
@@ -512,6 +531,93 @@ case "${COMMAND}" in
 	test "$#" -gt 0 || __usage "${COMMAND}" 'no volume specified'
 	for VOLUME; do volume_is_valid "${VOLUME}" || die "invalid volume '${VOLUME}'";done
 	for VOLUME; do heal_list "${VOLUME}" "${HOSTNAME}"; done
+	;;
+
+(remove|rm)
+	RECURSE=false
+	FORCE=false
+	DRY_RUN=false
+	INDEX=0
+	for arg; do
+		case "${arg}" in
+		(-r|--recurse)	RECURSE=true;;
+		(-f|--force)	FORCE=true;;
+		(-n|--dry-run)	DRY_RUN=true;;
+		(*)		set -- "$@" "${arg}";;
+		esac
+		INDEX="$((${INDEX}+1))"
+	done
+	shift "${INDEX}"
+	: "remove: ${@}"
+
+	gluster volume list > /dev/null 2>&1 || die "'gluster' command unavailable"
+	test "$#" -gt '0' || __usage "${COMMAND}" 'no volume specified'
+	volume_is_valid "${1}" || die "invalid volume '${1}'"
+	VOLUME="${1}"
+	shift
+
+	if ! LOCAL_BRICK="$(brick_path "${VOLUME}" "${HOSTNAME}")"; then
+		die "local node not a member of volume '${VOLUME}'"
+	fi
+
+	test "$#" -ge '1' || __usage "${COMMAND}" 'no file specified'
+
+	FILE="$(__realpath "${1}")"
+	FILE="${FILE#${LOCAL_BRICK}}"
+	test -e "${LOCAL_BRICK}${FILE}" || die "file or directory not in volume '${VOLUME}'"
+
+	if test -d "${LOCAL_BRICK}${FILE}"; then
+		if ! ${RECURSE}; then
+			warn "The specified path is a directory. Out-of-band removal of an entire"
+			warn "directory tree is generally a bad idea."
+			warn "Specify '--recurse' to remove the entire directory and all warn the"
+			warn "files within the tree."
+			exit 1
+		fi
+		RECURSE='-rf'
+	else
+		RECURSE=
+	fi
+
+	GFID="$(path2gfid "${LOCAL_BRICK}/${FILE}")"
+	GFID_PATH="${GFID%${GFID##????}}"
+	GFID_PATH="/.glusterfs/${GFID_PATH%??}/${GFID_PATH#??}/${GFID}"
+	test -e "${LOCAL_BRICK}${GFID_PATH}" || die "cannot find gfid path for file '${FILE}'"
+
+	for PEER in $(list_peers "${VOLUME}"); do
+		if ! ssh -n -T -o PasswordAuthentication=no "${PEER}" exit 0; then
+			die "localhost not authorized to ssh to '${PEER}'"
+		fi
+	done
+
+	for PEER in $(list_peers "${VOLUME}"); do
+		REMOTE_BRICK="$(brick_path "${VOLUME}" "${PEER}")"
+
+		if ! rtest "${PEER}" -e "${REMOTE_BRICK}${FILE}"; then
+			warn "file does not exist on ${PEER}"
+		else
+			set -- "${REMOTE_BRICK}${FILE}"
+		fi
+
+		if ! rtest "${PEER}" -e "${REMOTE_BRICK}${GFID_PATH}"; then
+			warn "gfid path does not exist on ${PEER}"
+		else
+			set -- "$@" "${REMOTE_BRICK}${GFID_PATH}"
+		fi
+
+
+		if ${DRY_RUN}; then
+			echo ssh -n -T -o PasswordAuthentication=no "${PEER}" rm ${RECURSE} "${REMOTE_BRICK}${FILE}" "${REMOTE_BRICK}${GFID_PATH}"
+		elif ${FORCE}; then
+			ssh -n -T -o PasswordAuthentication=no "${PEER}" rm ${RECURSE} "${REMOTE_BRICK}${FILE}" "${REMOTE_BRICK}${GFID_PATH}"
+		fi
+	done
+	if ! "${FORCE}" && ! "${DRY_RUN}"; then
+		warn "This command will permanently remove data from your filesystem and"
+		warn "should only be used as a tool of last resort and ONLY after warn"
+		warn "backups have been made of ALL bricks in the volume."
+		warn "Use '--force' to permanantely remove these files."
+	fi
 	;;
 
 (compare|cmp)

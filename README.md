@@ -40,6 +40,11 @@ the brick directly.
 **WARNING** This command will make irrivocable changes to the filesystem, it is
 recommended that a copy of the brick be made before using this command.
 
+**Example:**
+ - To perform a dry-run of a remove and see what the tool will do: `gluster-recovery remove <volume> --dry-run </path/to/file>`
+ - To remove a file: `gluster-recovery remove <volume> </path/to/file>`
+ - To remove a directory `gluster-recovery remove <volume> -r </path/to/directory>`
+
 ## compare
 *requires ssh*
 
