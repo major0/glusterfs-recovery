@@ -61,6 +61,7 @@ alias hasfunc='__hasfunc '
 # routines as part of the core.
 dirname()
 {
+	: "dirname($1)"
 	case "${1}" in (*/*|/*);; (*) set -- "./${1}";; esac
 	set -- "${1%/*}"
 	test -z "${1}" && set -- '/'
@@ -68,6 +69,7 @@ dirname()
 }
 basename()
 {
+	: "basename($1)"
 	set -- "${1%/}"
 	set -- "${1##*/}"
 	test -z "${1}" && set -- '/'
