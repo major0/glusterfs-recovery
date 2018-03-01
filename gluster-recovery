@@ -93,7 +93,12 @@ else
 		if ! test -d "${1}"; then
 			set -- "$(dirname "${1}")" "$(basename "${1}")"
 		fi
-		__realpath_pwd "${@}"
+		: "__realpath: '${1}' '${2}'"
+		if test -e "${1}"; then
+			__realpath_pwd "${@}"
+		else
+			echo "${1}/${2}"
+		fi
 	}
 fi
 alias realpath='__realpath '
