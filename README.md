@@ -35,7 +35,7 @@ List which files on the local node are in need of healing.
 ```
 
 ## rm | remove
-*requires ssh*
+*note: requires ssh*
 
 Remove a file from all bricks in a volume simultaneously.
 
@@ -65,7 +65,7 @@ To remove a directory:
 ```
 
 ## cmp | compare
-*requires ssh*
+*note: requires ssh*
 
 Compare files between various peers which are, or were, non-arbiter members of a replicated volume.
 
@@ -78,7 +78,7 @@ To compare files from the local node to the first valid member of the specified 
 
 To compare files from the local node to files of specified peer:
 ```
-gluster-recovery compare <volume> <peer>
+# gluster-recovery compare <volume> <peer>
 ```
 
 Lastly, it is also possible to compare files from the local node against
@@ -96,7 +96,7 @@ Find the path/file of a given gfid.
 
 **Example:**
 ```
-gluster-recovery gfid2path <volume> <gfid>
+# gluster-recovery gfid2path <volume> <gfid>
 ```
 
 ## path2gfid
@@ -104,5 +104,5 @@ Find the gfid of a given path.
 
 **Example:**
 ```
-gluster-recovery path2gfid </path/to/file>
+# gluster-recovery path2gfid </path/to/file>
 ```
