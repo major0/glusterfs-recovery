@@ -23,11 +23,11 @@ Display help about the specified command, or generic help if no command is speci
 
 **Example:** `gluster-recovery help list`
 
-## list
+## ls | list
 List which files on the local node are in need of healing.
 - `gluster-recovery list <volume>`
 
-## remove (TODO)
+## rm | remove
 *requires ssh*
 
 Remove a file from all bricks in a volume simultaneously.
@@ -45,7 +45,7 @@ recommended that a copy of the brick be made before using this command.
  - To remove a file: `gluster-recovery remove <volume> </path/to/file>`
  - To remove a directory `gluster-recovery remove <volume> -r </path/to/directory>`
 
-## compare
+## cmp | compare
 *requires ssh*
 
 Compare files between various peers which are, or were, non-arbiter members of a replicated volume.
