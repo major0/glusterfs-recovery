@@ -604,24 +604,45 @@ case "${COMMAND}" in
 	for PEER in $(list_peers "${VOLUME}"); do
 		REMOTE_BRICK="$(brick_path "${VOLUME}" "${PEER}")"
 
-		if ! rtest "${PEER}" -e "${REMOTE_BRICK}${FILE}"; then
-			warn "file does not exist on ${PEER}"
+		if test "${PEER}" = "${HOSTNAME}"; then
+			if ! test -e "${REMOTE_BRICK}${FILE}"; then
+				warn "file does not exist on ${PEER}"
+			else
+				set -- "${REMOTE_BRICK}${FILE}"
+			fi
+
+			if ! test -e "${REMOTE_BRICK}${GFID_PATH}"; then
+				warn "gfid path does not exist on ${PEER}"
+				continue
+			else
+				set -- "$@" "${REMOTE_BRICK}${GFID_PATH}"
+			fi
+
+			if ${DRY_RUN}; then
+				echo rm ${RECURSE} "${REMOTE_BRICK}${FILE}" "${REMOTE_BRICK}${GFID_PATH}"
+			elif ${FORCE}; then
+				rm ${RECURSE} "${REMOTE_BRICK}${FILE}" "${REMOTE_BRICK}${GFID_PATH}"
+			fi
+
 		else
-			set -- "${REMOTE_BRICK}${FILE}"
-		fi
+			if ! rtest "${PEER}" -e "${REMOTE_BRICK}${FILE}"; then
+				warn "file does not exist on ${PEER}"
+			else
+				set -- "${REMOTE_BRICK}${FILE}"
+			fi
 
-		if ! rtest "${PEER}" -e "${REMOTE_BRICK}${GFID_PATH}"; then
-			warn "gfid path does not exist on ${PEER}"
-			continue
-		else
-			set -- "$@" "${REMOTE_BRICK}${GFID_PATH}"
-		fi
+			if ! rtest "${PEER}" -e "${REMOTE_BRICK}${GFID_PATH}"; then
+				warn "gfid path does not exist on ${PEER}"
+				continue
+			else
+				set -- "$@" "${REMOTE_BRICK}${GFID_PATH}"
+			fi
 
-
-		if ${DRY_RUN}; then
-			echo ssh -n -T -o PasswordAuthentication=no "${PEER}" rm ${RECURSE} "${REMOTE_BRICK}${FILE}" "${REMOTE_BRICK}${GFID_PATH}"
-		elif ${FORCE}; then
-			ssh -n -T -o PasswordAuthentication=no "${PEER}" rm ${RECURSE} "${REMOTE_BRICK}${FILE}" "${REMOTE_BRICK}${GFID_PATH}"
+			if ${DRY_RUN}; then
+				echo ssh -n -T -o PasswordAuthentication=no "${PEER}" rm ${RECURSE} "${REMOTE_BRICK}${FILE}" "${REMOTE_BRICK}${GFID_PATH}"
+			elif ${FORCE}; then
+				ssh -n -T -o PasswordAuthentication=no "${PEER}" rm ${RECURSE} "${REMOTE_BRICK}${FILE}" "${REMOTE_BRICK}${GFID_PATH}"
+			fi
 		fi
 	done
 	if ! "${FORCE}" && ! "${DRY_RUN}"; then
