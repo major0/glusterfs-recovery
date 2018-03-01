@@ -612,6 +612,7 @@ case "${COMMAND}" in
 
 		if ! rtest "${PEER}" -e "${REMOTE_BRICK}${GFID_PATH}"; then
 			warn "gfid path does not exist on ${PEER}"
+			continue
 		else
 			set -- "$@" "${REMOTE_BRICK}${GFID_PATH}"
 		fi
