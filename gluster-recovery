@@ -569,7 +569,11 @@ case "${COMMAND}" in
 
 	test "$#" -ge '1' || __usage "${COMMAND}" 'no file specified'
 
-	FILE="$(__realpath "${1}")"
+	if test -e "${1}"; then
+		FILE="$(__realpath "${1}")"
+	else
+		FILE="$(__realpath "${LOCAL_BRICK}${1}")"
+	fi
 	FILE="${FILE#${LOCAL_BRICK}}"
 	test -e "${LOCAL_BRICK}${FILE}" || die "file or directory not in volume '${VOLUME}'"
 
