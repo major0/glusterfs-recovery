@@ -450,7 +450,7 @@ rtest()
 	: "rtest($*)"
 	__rtest_remote_host="${1}"
 	shift
-	set -- $(ssh -n -T -o PasswordAuthentication=no "${__rtest_remote_host}" "STRING_ERR=\"\$(test "$@" 2>&1 1>/dev/null)\";echo \"\$? \${STRING_ERR}\"")
+	set -- $(ssh -n -T -o PasswordAuthentication=no "${__rtest_remote_host}" "STRING_ERR=\"\$(test $(for arg;do printf "'${arg}' ";done) 2>&1 1>/dev/null)\";echo \"\$? \${STRING_ERR}\"")
 	__rtest_return="${1}"
 	shift 1
 	test "$#" -eq 0 || echo "$*" >&2
@@ -468,7 +468,7 @@ rstat()
 	: "rstat($*)"
 	__rstat_remote_host="${1}"
 	shift
-	set -- $(ssh -n -T -o PasswordAuthentication=no "${__rstat_remote_host}" "STRING_OUT=\"\$(stat "$@" 2>/dev/null)\";printf \"\$? \${STRING_OUT}\"")
+	set -- $(ssh -n -T -o PasswordAuthentication=no "${__rstat_remote_host}" "STRING_OUT=\"\$(stat $(for arg;do printf "'${arg}' ";done) 2>/dev/null)\";printf \"\$? \${STRING_OUT}\"")
 	__rstat_return="${1}"
 	shift 1
 	echo "$*"
@@ -619,7 +619,7 @@ case "${COMMAND}" in
 			fi
 
 			if ${DRY_RUN}; then
-				echo rm ${RECURSE} "${REMOTE_BRICK}${FILE}" "${REMOTE_BRICK}${GFID_PATH}"
+				echo rm ${RECURSE} "'${REMOTE_BRICK}${FILE}'" "'${REMOTE_BRICK}${GFID_PATH}'"
 			elif ${FORCE}; then
 				rm ${RECURSE} "${REMOTE_BRICK}${FILE}" "${REMOTE_BRICK}${GFID_PATH}"
 			fi
@@ -639,7 +639,7 @@ case "${COMMAND}" in
 			fi
 
 			if ${DRY_RUN}; then
-				echo ssh -n -T -o PasswordAuthentication=no "${PEER}" rm ${RECURSE} "${REMOTE_BRICK}${FILE}" "${REMOTE_BRICK}${GFID_PATH}"
+				echo ssh -n -T -o PasswordAuthentication=no "${PEER}" rm ${RECURSE} "'${REMOTE_BRICK}${FILE}'" "'${REMOTE_BRICK}${GFID_PATH}'"
 			elif ${FORCE}; then
 				ssh -n -T -o PasswordAuthentication=no "${PEER}" rm ${RECURSE} "${REMOTE_BRICK}${FILE}" "${REMOTE_BRICK}${GFID_PATH}"
 			fi
