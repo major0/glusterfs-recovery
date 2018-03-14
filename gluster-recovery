@@ -180,7 +180,7 @@ __usage()
 	(rm|remove)
 		echo "usage: $0 ${__usage_progname} <volume> [-r] [--dry-run] </path/to/file>";;
 	(cmp|compare)
-		echo "usage: $0 ${__usage_progname} <volume> [<node>[:</path/to/brick>]]";;
+		echo "usage: $0 ${__usage_progname} <volume> [<peer>[:</path/to/brick>]]";;
 	(gfid2path)
 		echo "usage: $0 ${__usage_progname} <volume> <gfid>";;
 	(path2gfid)
@@ -188,9 +188,9 @@ __usage()
 	(*) sed -e 's/^	//' <<END_OF_USAGE
 	usage: $0 <command> [args]
 	commands:
-	  list			List files which need fixing.
+	  list			List files on the local peer which need fixing.
 	  remove		Remove a file from all bricks in a volume.
-	  compare		Compare files between nodes.
+	  compare		Compare files between peers.
 	  gfid2path		Find the file(s) for a given gfid.
 	  path2gfid		Find the gfid for the given file(s).
 	  help			Display help about a command.
@@ -254,19 +254,19 @@ list_peers()
 
 ## brick_path
 # @1 volume name
-# @2 node
-# Find the brick path for a given node
+# @2 peer
+# Find the brick path for a given peer
 brick_path()
 {(
 	: "brick_path($*)"
 	__brick_path_volume="${1}"
-	__brick_path_node="${2}"
+	__brick_path_peer="${2}"
 	gluster volume status "${__brick_path_volume}"|while read __brick_path_line; do
 		set -- ${__brick_path_line}
 		case "${1}" in
 		(Brick*)
 			set -- "${2%%:*}" "${2#*:}"
-			if test "${1}" = "${__brick_path_node}"; then
+			if test "${1}" = "${__brick_path_peer}"; then
 				echo "${2#*:}"
 				exit 0
 			fi
@@ -338,7 +338,7 @@ path2gfid()
 
 ## heal_list
 # @1 volume to examine
-# @2 hostname to use for the local node
+# @2 hostname to use for localhost
 heal_list()
 {
 	: "heal_list($*)"
@@ -564,7 +564,7 @@ case "${COMMAND}" in
 	shift
 
 	if ! LOCAL_BRICK="$(brick_path "${VOLUME}" "${HOSTNAME}")"; then
-		die "local node not a member of volume '${VOLUME}'"
+		die "local peer not a member of volume '${VOLUME}'"
 	fi
 
 	test "$#" -ge '1' || __usage "${COMMAND}" 'no file specified'
@@ -668,7 +668,7 @@ case "${COMMAND}" in
 	fi
 
 	if ! LOCAL_PREFIX="$(brick_path "${VOLUME}" "${HOSTNAME}")"; then
-		die "local node not a member of volume '${VOLUME}'"
+		die "local peer not a member of volume '${VOLUME}'"
 	fi
 
 	if test "$#" -gt '0'; then
@@ -685,7 +685,7 @@ case "${COMMAND}" in
 			fi
 			REMOTE_PREFIX="${1#*:}"
 		elif ! REMOTE_PREFIX="$(brick_path "${VOLUME}" "${REMOTE_HOST}")"; then
-			die "node '${REMOTE_HOST}' not a member of volume '${VOLUME}'"
+			die "peer '${REMOTE_HOST}' not a member of volume '${VOLUME}'"
 		fi
 		shift
 	else
@@ -709,7 +709,7 @@ case "${COMMAND}" in
 	shift
 
 	if ! BRICK="$(brick_path "${VOLUME}" "${HOSTNAME}")"; then
-		die "local node not a member of volume '${VOLUME}'"
+		die "localhost not a member of volume '${VOLUME}'"
 	fi
 
 	test "$#" -ge '1' || __usage "${COMMAND}" 'no gfid specified'
