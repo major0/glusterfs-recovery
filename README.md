@@ -31,12 +31,32 @@ Report basic heal status of specified volume.  If no volume is specified then
 report the status of all volumes.
 
 This command reports an error should any brick in a volume be offline, or if
-there are any files in the brick which need healing.  It is possible for this
-command to report a false-error before the file has been automatically healed.
+there are more than **`<limit>`** files in need of healing. It is possible for
+this command to report a false-error before the file has been automatically
+healed should the reporting **`<limit>`** be set too low.
 
-**Example:**
+**Examples:**
 ```
 # gluster-recovery status [<volume>]
+```
+
+Generate a report if there are more than 100 files on a given brick in need of
+repair.
+
+```
+# gluster-recovery status -l 100 <volume>
+```
+
+Generate a report if there are more than 1000 files total in need of repair.
+```
+# gluster-recovery status -t 1000 <volume>
+```
+
+Generate a report if there are more than 100 files on any brick, or 200 files
+total, in need of repair.
+
+```
+# gluster-recovery status -t 200 -l 100 <volume>
 ```
 
 ## ls | list

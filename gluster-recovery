@@ -176,7 +176,7 @@ __usage()
 
 	case "${__usage_progname}" in
 	(status)
-		echo "usage: %0 ${__usage_progname} [<volume>]";;
+		echo "usage: %0 ${__usage_progname} [-l <limit>] [-t <limit>] [<volume>]";;
 	(ls|list)
 		echo "usage: $0 ${__usage_progname} <volume>";;
 	(rm|remove)
@@ -582,13 +582,68 @@ for arg; do case "${arg}" in (-h|--help) __usage "${COMMAND}";; esac; done
 ## Main
 case "${COMMAND}" in
 (status)
+	STATUS_LIMIT=
+	STATUS_TOTAL=
+	while getopts ':t:l:' __status_arg; do
+		case "${__status_arg}" in
+		(l)	STATUS_LIMIT="${OPTARG}";;
+		(t)	STATUS_TOTAL="${OPTARG}";;
+		(:) # Missing optional arguments
+			case "${OPTARG}" in
+			(*)	__usage "${COMMAND}" "option '-${OPTARG}' requires an argument";;
+			esac;;
+
+		## Long Argument handling
+		# POSIX: Each time it is invoked, the getopts utility shall
+		# place the value of the next option in the shell variable
+		# specified by the 'name' operand and the index of the next
+		# argument to be processed in the shell variable OPTIND.
+		#
+		# NOTE - During error handling Bash and Zsh "appear" to point
+		# OPTIND at the argument that had the error, a behavior not
+		# decribed by POSIX.
+		(\?)	: "extended options: index=${OPTIND}, arg='${__status_arg}', optarg='${OPTARG}'"
+			shift $(__shiftarg)
+			: "extended arg: '${1}'"
+
+			case "${1}" in
+			(--limit|--limit=*)
+				STATUS_LIMIT="$(__optarg "${1}" "${2}")" ;;
+
+			(--total|--total=*)
+				STATUS_TOTAL="$(__optarg "${1}" "${2}")" ;;
+
+			##
+			# Our standard argument handling
+			(--)	OPTIND="$((${OPTIND} + 1))"; break;;
+			(-*)	__usage "${COMMAND}" "unknown option '${1}'"
+				exit 1;;
+			(*)	break;;
+			esac
+
+			shift ${OPTIND}
+			OPTIND=1;;
+		esac
+	done
+	unset __status_arg
+	shift $((${OPTIND} - 1))
+	OPTIND=1
+	unset OPTARG
+
+	STATUS_LIMIT="${STATUS_LIMIT:=0}"
+	test -z "${STATUS_LIMIT##[0-9]}" || __usage "${COMMAND}" "invalid limit specified '${STATUS_LIMIT}'"
+
+	STATUS_TOTAL="${STATUS_TOTAL:=${STATUS_LIMIT}}"
+	test -z "${STATUS_TOTAL##[0-9]}" || __usage "${COMMAND}" "invalid total limit specified '${STATUS_TOTAL}'"
+
 	gluster volume list > /dev/null 2>&1 || die "'gluster' command unavailable"
 	test "$#" -gt '0' || set -- $(gluster volume list)
 	for VOLUME; do volume_is_valid "${VOLUME}" || die "invalid volume '${VOLUME}'";done
-	RET=0
+	VOLUME_RET=0
 	for VOLUME; do
+		VOLUME_ERROR=0
+		VOLUME_TOTAL=0
 		VOLUME_REPORT=
-		VOLUME_ERRORS=0
 		VOLUME_STATUS="$(volume_status "${VOLUME}")"
 		if test -z "${VOLUME_STATUS}"; then
 			echo "${VOLUME}: OK"
@@ -599,24 +654,39 @@ case "${COMMAND}" in
 			case "${ENTRY}" in
 			(__DONE__)
 				if test "$#" -gt '1'; then
-					VOLUME_REPORT="${VOLUME}=${VOLUME_ERRORS}, ${VOLUME_REPORT}"
+					VOLUME_REPORT="${VOLUME}=${VOLUME_TOTAL}, ${VOLUME_REPORT}"
 				else
-					VOLUME_REPORT="total=${VOLUME_ERRORS}, ${VOLUME_REPORT}"
+					VOLUME_REPORT="total=${VOLUME_TOTAL}, ${VOLUME_REPORT}"
 				fi
-				echo "ERROR: ${VOLUME_REPORT}"
-				RET=1
+				if test "${VOLUME_RET}" -gt '0'; then
+					echo "ERROR: ${VOLUME_REPORT}"
+				else
+					echo "${VOLUME}: OK"
+				fi
 				break;;
 
 			(*)	if ! test -z "${VOLUME_REPORT}"; then
 					VOLUME_REPORT="${VOLUME_REPORT}, "
 				fi
-				VOLUME_ERRORS="$((${VOLUME_ERRORS} + ${ENTRY##*=}))"
+
+				ENTRY_VALUE="${ENTRY##*=}"
+				if test -z "${ENTRY_VALUE##[0-9]}"; then
+					test "${ENTRY_VALUE}" -lt "${VOLUME_ERROR}" || VOLUME_ERROR="${ENTRY_VALUE}"
+					VOLUME_TOTAL="$((${VOLUME_TOTAL} + ${ENTRY_VALUE}))"
+					if test "${VOLUME_TOTAL}" -gt "${STATUS_TOTAL}" || \
+					   test "${VOLUME_ERROR}" -gt "${STATUS_LIMIT}"; then
+						VOLUME_RET=1
+					fi
+				else
+					# brick is offline?
+					VOLUME_RET=1
+				fi
 				VOLUME_REPORT="${VOLUME_REPORT}${ENTRY}"
 				;;
 			esac
 		done
 	done
-	exit ${RET}
+	exit ${VOLUME_RET}
 	;;
 
 (list|ls)
