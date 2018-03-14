@@ -339,25 +339,6 @@ path2gfid()
 	echo "${1}-${2}-${3}-${4}-${5}"
 }
 
-## volume_peer_status
-# @1 volume to examine
-# @2 peer to lookup
-volume_peer_status()
-{
-	: "volume_peer_status($*)"
-	__volume_peer_status_name="${2}"
-	gluster volume status "${1}" 2>/dev/null | while read __volume_peer_status_line; do
-		set -- ${__volume_peer_status_line}
-		test "${1}" = 'Brick' || continue
-		test "${2%%:*}" = "${__volume_peer_status_name}" || continue
-		case "${5}" in
-		(Y)	echo 'online';exit 0;;
-		(N)	echo 'offline';exit 1;;
-		(*)	echo 'unknown';exit 2;;
-		esac
-	done
-}
-
 ## volume_status
 # @1 volume to examine
 volume_status()
@@ -370,19 +351,13 @@ volume_status()
 		: "volume_status: case($*)"
 		case "${1}" in
 		(Brick*)	__volume_status_peer="${2%%:*}"; continue ;;
-		(Number*)
-			__volume_peer_status="$(volume_peer_status "${__volume_status_vol}" "${__volume_status_peer}")" || :
-			case "${__volume_peer_status}" in
-			(online);;
-			(*)	printf "${__volume_status_peer}=${__volume_peer_status} "
-				continue;;
-			esac
-			if test "${4##[0-9]}"; then
-				printf "${__volume_status_peer}=unknown "
-			else
-				test "${4}" -eq 0 || printf "${__volume_status_peer}=${4} "
-			fi
-			;;
+
+		(Status*)	test "$#" -eq 2 || echo "${__volume_status_peer}=offline"; continue;;
+
+		(Number*)	if printf '%d' "${4}" > /dev/null 2>&1; then
+					test "${4}" -eq 0 || printf "${__volume_status_peer}=${4} "
+				fi
+				;;
 		esac
 	done
 }
@@ -634,10 +609,10 @@ case "${COMMAND}" in
 	unset OPTARG
 
 	STATUS_LIMIT="${STATUS_LIMIT:=0}"
-	test -z "${STATUS_LIMIT##[0-9]}" || __usage "${COMMAND}" "invalid limit specified '${STATUS_LIMIT}'"
+	printf '%d' "${STATUS_LIMIT}" >/dev/null 2>&1 || __usage "${COMMAND}" "invalid limit specified '${STATUS_LIMIT}'"
 
 	STATUS_TOTAL="${STATUS_TOTAL:=${STATUS_LIMIT}}"
-	test -z "${STATUS_TOTAL##[0-9]}" || __usage "${COMMAND}" "invalid total limit specified '${STATUS_TOTAL}'"
+	printf '%d' "${STATUS_TOTAL}" >/dev/null 2>&1 || __usage "${COMMAND}" "invalid total limit specified '${STATUS_TOTAL}'"
 
 	gluster volume list > /dev/null 2>&1 || die "'gluster' command unavailable"
 	test "$#" -gt '0' || set -- $(gluster volume list)
