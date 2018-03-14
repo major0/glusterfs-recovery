@@ -175,6 +175,8 @@ __usage()
 	fi
 
 	case "${__usage_progname}" in
+	(status)
+		echo "usage: %0 ${__usage_progname} [<volume>]";;
 	(ls|list)
 		echo "usage: $0 ${__usage_progname} <volume>";;
 	(rm|remove)
@@ -188,6 +190,7 @@ __usage()
 	(*) sed -e 's/^	//' <<END_OF_USAGE
 	usage: $0 <command> [args]
 	commands:
+	  status		Report health status of a volume.
 	  list			List files on the local peer which need fixing.
 	  remove		Remove a file from all bricks in a volume.
 	  compare		Compare files between peers.
@@ -334,6 +337,23 @@ path2gfid()
 	set -- "${@}" "${1#${2}${3}${4}${5}}"
 	shift
 	echo "${1}-${2}-${3}-${4}-${5}"
+}
+
+## volume_status
+# @1 volume to examine
+volume_status()
+{
+	: "volume_status($*)"
+	gluster volume heal "${1}" statistics heal-count | while read __volume_status_line; do
+		set -- ${__volume_status_line}
+		case "${1}" in
+		(Brick*)	__volume_status_peer="${2%%:*}"; continue ;;
+		(Number*)
+			test "${4}" -gt '0' || continue
+			printf "${__volume_status_peer}=${4} "
+			;;
+		esac
+	done
 }
 
 ## heal_list
@@ -533,6 +553,36 @@ for arg; do case "${arg}" in (-h|--help) __usage "${COMMAND}";; esac; done
 
 ## Main
 case "${COMMAND}" in
+(status)
+	gluster volume list > /dev/null 2>&1 || die "'gluster' command unavailable"
+	test "$#" -gt '0' || set -- $(gluster volume list)
+	for VOLUME; do volume_is_valid "${VOLUME}" || die "invalid volume '${VOLUME}'";done
+	for VOLUME; do
+		VOLUME_STATUS="$(volume_status "${VOLUME}")"
+		if test -z "${VOLUME_STATUS}"; then
+			echo "${VOLUME}: OK"
+			continue
+		fi
+
+		VOLUME_REPORT=
+		ERR_COUNT=0
+		for ENTRY in ${VOLUME_STATUS} __DONE__; do
+			case "${ENTRY}" in
+			(__DONE__)
+				echo "ERROR: total=${ERR_COUNT}, ${VOLUME_REPORT}"
+				break;;
+
+			(*)	if ! test -z "${VOLUME_REPORT}"; then
+					VOLUME_REPORT="${VOLUME_REPORT}, "
+					continue
+				fi
+				VOLUME_REPORT="${ENTRY}"
+				;;
+			esac
+		done
+	done
+	;;
+
 (list|ls)
 	gluster volume list > /dev/null 2>&1 || die "'gluster' command unavailable"
 	test "$#" -gt 0 || __usage "${COMMAND}" 'no volume specified'
