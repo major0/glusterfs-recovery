@@ -26,6 +26,19 @@ Display help about the specified command, or generic help if no command is speci
 # gluster-recovery help list
 ```
 
+## status
+Report basic heal status of specified volume.  If no volume is specified then
+report the status of all volumes.
+
+This command reports an error should any brick in a volume be offline, or if
+there are any files in the brick which need healing.  It is possible for this
+command to report a false-error before the file has been automatically healed.
+
+**Example:**
+```
+# gluster-recovery status [<volume>]
+```
+
 ## ls | list
 List which files on the local node are in need of healing.
 
