@@ -377,7 +377,11 @@ volume_status()
 			(*)	printf "${__volume_status_peer}=${__volume_peer_status} "
 				continue;;
 			esac
-			test "${4}" -eq '0' || printf "${__volume_status_peer}=${4} "
+			if test "${4##[0-9]}"; then
+				printf "${__volume_status_peer}=unknown "
+			else
+				test "${4}" -eq 0 || printf "${__volume_status_peer}=${4} "
+			fi
 			;;
 		esac
 	done
