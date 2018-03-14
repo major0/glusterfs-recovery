@@ -339,18 +339,46 @@ path2gfid()
 	echo "${1}-${2}-${3}-${4}-${5}"
 }
 
+## volume_peer_status
+# @1 volume to examine
+# @2 peer to lookup
+volume_peer_status()
+{
+	: "volume_peer_status($*)"
+	__volume_peer_status_name="${2}"
+	gluster volume status "${1}" 2>/dev/null | while read __volume_peer_status_line; do
+		set -- ${__volume_peer_status_line}
+		test "${1}" = 'Brick' || continue
+		test "${2%%:*}" = "${__volume_peer_status_name}" || continue
+		case "${5}" in
+		(Y)	exit 0;;
+		(N)	exit 1;;
+		(*)	exit 2;;
+		esac
+	done
+}
+
 ## volume_status
 # @1 volume to examine
 volume_status()
 {
 	: "volume_status($*)"
-	gluster volume heal "${1}" statistics heal-count | while read __volume_status_line; do
+	__volume_status_vol="${1}"
+	__volume_status_peer="${2}"
+	gluster volume heal "${1}" statistics heal-count 2>/dev/null | while read __volume_status_line; do
 		set -- ${__volume_status_line}
 		case "${1}" in
 		(Brick*)	__volume_status_peer="${2%%:*}"; continue ;;
 		(Number*)
-			test "${4}" -gt '0' || continue
-			printf "${__volume_status_peer}=${4} "
+			volume_peer_status "${__volume_status_vol}" "${__volume_status_peer}" || :
+			case "$?" in
+			(0)	;;
+			(1)	printf "${__volume_status_peer}=offline "
+				continue;;
+			(*)	printf "${__volume_status_peer}=unknown "
+				continue;;
+			esac
+			test "${4}" -eq '0' || printf "${__volume_status_peer}=${4} "
 			;;
 		esac
 	done
@@ -557,30 +585,38 @@ case "${COMMAND}" in
 	gluster volume list > /dev/null 2>&1 || die "'gluster' command unavailable"
 	test "$#" -gt '0' || set -- $(gluster volume list)
 	for VOLUME; do volume_is_valid "${VOLUME}" || die "invalid volume '${VOLUME}'";done
+	RET=0
 	for VOLUME; do
+		VOLUME_REPORT=
+		VOLUME_ERRORS=0
 		VOLUME_STATUS="$(volume_status "${VOLUME}")"
 		if test -z "${VOLUME_STATUS}"; then
 			echo "${VOLUME}: OK"
 			continue
 		fi
 
-		VOLUME_REPORT=
-		ERR_COUNT=0
 		for ENTRY in ${VOLUME_STATUS} __DONE__; do
 			case "${ENTRY}" in
 			(__DONE__)
-				echo "ERROR: total=${ERR_COUNT}, ${VOLUME_REPORT}"
+				if test "$#" -gt '1'; then
+					VOLUME_REPORT="${VOLUME}=${VOLUME_ERRORS}, ${VOLUME_REPORT}"
+				else
+					VOLUME_REPORT="total=${VOLUME_ERRORS}, ${VOLUME_REPORT}"
+				fi
+				echo "ERROR: ${VOLUME_REPORT}"
+				RET=1
 				break;;
 
 			(*)	if ! test -z "${VOLUME_REPORT}"; then
 					VOLUME_REPORT="${VOLUME_REPORT}, "
-					continue
 				fi
-				VOLUME_REPORT="${ENTRY}"
+				VOLUME_ERRORS="$((${VOLUME_ERRORS} + ${ENTRY##*=}))"
+				VOLUME_REPORT="${VOLUME_REPORT}${ENTRY}"
 				;;
 			esac
 		done
 	done
+	exit ${RET}
 	;;
 
 (list|ls)
