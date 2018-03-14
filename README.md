@@ -50,7 +50,7 @@ List which files on the local node are in need of healing.
 ## rm | remove
 *note: requires ssh*
 
-Remove a file from all bricks in a volume simultaneously.
+Remove a file from all bricks in **volume** simultaneously.
 
 It is possible to have files be available at the glusterfs mount point which
 are corrupt and can not be removed/rewritten.  Should this situation arise then
