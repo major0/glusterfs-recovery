@@ -80,6 +80,7 @@ false() { ! : ; }
 warn() { echo "WARNING! $*"; }
 error() { echo "error: $*" >&2; }
 die() { echo "error: $*" >&2; exit 1; }
+isnum() { printf '%d' "${1}" > /dev/null 2>&1; }
 
 if __hascmd realpath; then
 	__realpath() { command realpath "$@"; }
@@ -354,8 +355,8 @@ volume_status()
 
 		(Status*)	test "$#" -eq 2 || echo "${__volume_status_peer}=offline"; continue;;
 
-		(Number*)	if printf '%d' "${4}" > /dev/null 2>&1; then
-					test "${4}" -eq 0 || printf "${__volume_status_peer}=${4} "
+		(Number*)	if isnum "${4}" && test "${4}" -gt '0'; then
+					printf "${__volume_status_peer}=${4} "
 				fi
 				;;
 		esac
@@ -609,10 +610,10 @@ case "${COMMAND}" in
 	unset OPTARG
 
 	STATUS_LIMIT="${STATUS_LIMIT:=0}"
-	printf '%d' "${STATUS_LIMIT}" >/dev/null 2>&1 || __usage "${COMMAND}" "invalid limit specified '${STATUS_LIMIT}'"
+	isnum "${STATUS_LIMIT}" || __usage "${COMMAND}" "invalid limit specified '${STATUS_LIMIT}'"
 
 	STATUS_TOTAL="${STATUS_TOTAL:=${STATUS_LIMIT}}"
-	printf '%d' "${STATUS_TOTAL}" >/dev/null 2>&1 || __usage "${COMMAND}" "invalid total limit specified '${STATUS_TOTAL}'"
+	isnum "${STATUS_TOTAL}" || __usage "${COMMAND}" "invalid total limit specified '${STATUS_TOTAL}'"
 
 	gluster volume list > /dev/null 2>&1 || die "'gluster' command unavailable"
 	test "$#" -gt '0' || set -- $(gluster volume list)
@@ -648,7 +649,7 @@ case "${COMMAND}" in
 				fi
 
 				ENTRY_VALUE="${ENTRY##*=}"
-				if test -z "${ENTRY_VALUE##[0-9]}"; then
+				if isnum "${ENTRY_VALUE}"; then
 					test "${ENTRY_VALUE}" -lt "${VOLUME_ERROR}" || VOLUME_ERROR="${ENTRY_VALUE}"
 					VOLUME_TOTAL="$((${VOLUME_TOTAL} + ${ENTRY_VALUE}))"
 					if test "${VOLUME_TOTAL}" -gt "${STATUS_TOTAL}" || \
